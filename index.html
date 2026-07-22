@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>왁뿌볼이 되어버리다?!</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- 게임 전체 컨테이너: Three.js 캔버스와 UI 오버레이가 모두 이 안에 들어간다 -->
+  <div id="game-container">
+
+    <!-- ===== 게임 중 표시되는 HUD ===== -->
+    <div id="hud" class="hidden">
+      <!-- 왼쪽 위: 내구도 -->
+      <div id="durability-panel">
+        <div id="durability-label">내구도 <span id="durability-value">100</span></div>
+        <div id="durability-bar-bg">
+          <div id="durability-bar-fill"></div>
+        </div>
+      </div>
+
+      <!-- 오른쪽 위: 생존 시간 -->
+      <div id="time-panel">생존 시간 <span id="time-value">0.0</span>s</div>
+
+      <!-- 아래 중앙: 조작법 안내 -->
+      <div id="controls-hint">WASD 이동 · Shift 대시 · H 디버그</div>
+
+      <!-- 중앙: 시작 직후 안내 문구 -->
+      <div id="center-message"></div>
+    </div>
+
+    <!-- ===== 디버그 정보 (H 키로 토글) ===== -->
+    <div id="debug-panel" class="hidden"></div>
+
+    <!-- ===== 시작 화면 ===== -->
+    <div id="start-screen" class="overlay">
+      <div class="overlay-box">
+        <h1 class="title">왁뿌볼이 되어버리다?!</h1>
+        <p class="subtitle">사람들에게 잡히지 말고 끝까지 살아남으세요!</p>
+        <p class="controls">WASD 이동 &nbsp;/&nbsp; Shift 대시</p>
+        <button id="start-button" class="game-button">게임 시작</button>
+      </div>
+    </div>
+
+    <!-- ===== 결과 화면 ===== -->
+    <div id="gameover-screen" class="overlay hidden">
+      <div class="overlay-box">
+        <h1 class="title gameover-title">게임 오버</h1>
+        <p class="result">최종 생존 시간 <span id="final-time">0.0</span>s</p>
+        <button id="restart-button" class="game-button">다시 시작</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Three.js는 CDN(UMD 빌드)으로 불러온다. 전역 THREE 객체가 생성된다. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- 게임 로직 -->
+  <script src="game.js"></script>
+</body>
+</html>

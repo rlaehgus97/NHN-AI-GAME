@@ -1,0 +1,237 @@
+/* ===== 기본 리셋 ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #14141f;
+  /* 시스템 폰트만 사용 (외부 폰트 파일 없음) */
+  font-family: "Trebuchet MS", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  color: #fff;
+  user-select: none;
+}
+
+/* ===== 게임 컨테이너 ===== */
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Three.js가 생성하는 캔버스 */
+#game-container canvas {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* 공통 숨김 클래스 */
+.hidden {
+  display: none !important;
+}
+
+/* ===== HUD ===== */
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* HUD가 클릭을 가로채지 않도록 */
+  z-index: 10;
+}
+
+/* 내구도 패널 (왼쪽 위) */
+#durability-panel {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  min-width: 200px;
+}
+
+#durability-label {
+  font-size: 18px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  margin-bottom: 6px;
+}
+
+#durability-value {
+  color: #ffd85c;
+}
+
+#durability-bar-bg {
+  width: 220px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+#durability-bar-fill {
+  width: 100%;
+  height: 100%;
+  background: #4caf50;
+  transition: width 0.12s linear, background 0.2s linear;
+}
+
+/* 생존 시간 (오른쪽 위) */
+#time-panel {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  font-size: 20px;
+  font-weight: bold;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+#time-value {
+  color: #7ec8ff;
+}
+
+/* 조작법 안내 (아래 중앙) */
+#controls-hint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  padding: 6px 16px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 20px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* 중앙 안내 문구 (도망쳐!) */
+#center-message {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 64px;
+  font-weight: 900;
+  color: #ff5a7a;
+  text-shadow: 0 4px 0 #7a1a2c, 0 0 24px rgba(255, 90, 122, 0.6);
+  letter-spacing: 2px;
+}
+
+/* ===== 디버그 패널 (왼쪽 아래) ===== */
+#debug-panel {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 20;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #9dffb0;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(157, 255, 176, 0.3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  pointer-events: none;
+}
+
+/* ===== 오버레이 (시작 / 결과 화면) ===== */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 반투명 오버레이 */
+  background: radial-gradient(
+    circle at center,
+    rgba(20, 20, 35, 0.72),
+    rgba(10, 10, 18, 0.9)
+  );
+  backdrop-filter: blur(2px);
+}
+
+.overlay-box {
+  text-align: center;
+  padding: 40px 56px;
+  background: rgba(30, 30, 48, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  max-width: 90vw;
+}
+
+.title {
+  font-size: 44px;
+  font-weight: 900;
+  color: #ffd85c;
+  text-shadow: 0 4px 0 #b07b12, 0 0 30px rgba(255, 216, 92, 0.35);
+  margin-bottom: 18px;
+  letter-spacing: 1px;
+}
+
+.gameover-title {
+  color: #ff6b6b;
+  text-shadow: 0 4px 0 #7a1a1a, 0 0 30px rgba(255, 107, 107, 0.35);
+}
+
+.subtitle {
+  font-size: 18px;
+  color: #e6e6f0;
+  margin-bottom: 10px;
+}
+
+.controls,
+.result {
+  font-size: 16px;
+  color: #b9b9d0;
+  margin-bottom: 26px;
+}
+
+.result span {
+  color: #7ec8ff;
+  font-weight: bold;
+  font-size: 20px;
+}
+
+/* ===== 버튼 ===== */
+.game-button {
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: bold;
+  color: #2a1a00;
+  padding: 14px 44px;
+  border: none;
+  border-radius: 40px;
+  background: linear-gradient(180deg, #ffe27a, #ffbe3d);
+  box-shadow: 0 6px 0 #c98a17, 0 10px 24px rgba(0, 0, 0, 0.4);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.game-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 0 #c98a17, 0 14px 28px rgba(0, 0, 0, 0.45);
+}
+
+.game-button:active {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 #c98a17, 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+.game-button:focus-visible {
+  outline: 3px solid #7ec8ff;
+  outline-offset: 3px;
+}
+
+/* 화면이 좁을 때 대응 */
+@media (max-width: 480px) {
+  .title { font-size: 30px; }
+  .overlay-box { padding: 28px 24px; }
+  #center-message { font-size: 44px; }
+  #durability-bar-bg { width: 160px; }
+}
