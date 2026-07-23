@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>마법사 핍의 모험 - 마법 슈팅 게임</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas"></canvas>
+  </div>
+
+  <!-- 기능별로 분리된 스크립트 파일을 순서대로 로드 -->
+  <script src="js/config.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/particle.js"></script>
+  <script src="js/projectile.js"></script>
+  <script src="js/enemy.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
