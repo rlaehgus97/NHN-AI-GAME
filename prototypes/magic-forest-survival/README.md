@@ -9,6 +9,7 @@ https://magic-forest-survival--annie050517.replit.app
 ## 실행 방법
 
 `index.html`을 브라우저에서 실행합니다.
+PassWord : nhn123456789asdf
 
 정상 실행되지 않을 경우 VS Code Live Server를 사용합니다.
 
