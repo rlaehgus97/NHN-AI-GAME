@@ -1,0 +1,865 @@
+/* ============================================
+   style.css - 왁뿌볼 & 슬라임 가게 스타일
+   
+   오류 확인 위치:
+   - 레이아웃이 깨지면: .screen, .craft-header, .eval-content 확인
+   - 버튼이 안 보이면: .btn, .ingredient-btn 확인
+   - 캐릭터가 이상하면: .customer-svg 확인
+   ============================================ */
+
+/* ===== 기본 설정 ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --pink:      #FFB7C5;
+  --pink-dark: #FF8FAB;
+  --accent:    #C060A0;
+  --cream:     #FFF8F0;
+  --bg:        #FFF0F8;
+  --shadow:    0 4px 16px rgba(192, 96, 160, 0.15);
+  --radius:    16px;
+}
+
+body {
+  /* 한국어 폰트 우선 순서 */
+  font-family: 'Noto Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', '나눔고딕', sans-serif;
+  background: var(--bg);
+  min-height: 100vh;
+  color: #333;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ===== 공통 화면 기본 스타일 ===== */
+.screen {
+  width: 100%;
+  max-width: 860px;
+  min-height: 100vh;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ===== 공통 버튼 ===== */
+.btn {
+  padding: 12px 28px;
+  border: none;
+  border-radius: 50px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+  letter-spacing: -0.3px;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ================================================
+   타이틀 화면
+   ================================================ */
+.title-screen {
+  justify-content: center;
+  text-align: center;
+  background: linear-gradient(150deg, #FFF0F8 0%, #EEE8FF 100%);
+}
+
+.title-deco {
+  font-size: 2.8rem;
+  margin-bottom: 8px;
+  animation: float 2.8s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-12px); }
+}
+
+.game-title {
+  font-size: 2.2rem;
+  color: var(--accent);
+  text-shadow: 2px 3px 0 #FFB7C5;
+  line-height: 1.35;
+  margin-bottom: 10px;
+}
+
+.game-subtitle {
+  color: #999;
+  font-size: 1rem;
+  margin-bottom: 24px;
+}
+
+.btn-start {
+  background: linear-gradient(135deg, #FF8FAB, #C060A0);
+  color: white;
+  font-size: 1.2rem;
+  padding: 16px 44px;
+  box-shadow: 0 4px 18px rgba(192, 96, 160, 0.4);
+}
+
+.how-to-play {
+  background: white;
+  border-radius: var(--radius);
+  padding: 20px 28px;
+  max-width: 440px;
+  text-align: left;
+  box-shadow: var(--shadow);
+}
+
+.how-to-play h3 {
+  color: var(--accent);
+  margin-bottom: 10px;
+  font-size: 1.05rem;
+}
+
+.how-to-play ol {
+  padding-left: 20px;
+  color: #555;
+  line-height: 2.1;
+  font-size: 0.95rem;
+}
+
+.tip {
+  margin-top: 10px;
+  color: #aaa;
+  font-size: 0.85rem;
+}
+
+/* ================================================
+   주문 화면
+   ================================================ */
+.order-screen {
+  background: linear-gradient(160deg, #FFE8F5 0%, #F5E8FF 100%);
+}
+
+.order-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 20px;
+  background: white;
+  border-radius: 50px;
+  box-shadow: var(--shadow);
+}
+
+.customer-counter {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.money-display {
+  font-weight: 700;
+  color: #E8900A;
+}
+
+/* 가게 장면 */
+.shop-scene {
+  width: 100%;
+  max-width: 680px;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(192, 96, 160, 0.18);
+}
+
+.shop-wall {
+  background: linear-gradient(180deg, #FFD5EB 0%, #FFE8D5 100%);
+  padding: 14px 16px 8px;
+  text-align: center;
+}
+
+.shop-sign {
+  display: inline-block;
+  background: white;
+  border-radius: 12px;
+  padding: 5px 20px;
+  font-weight: 700;
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 10px;
+  font-size: 0.95rem;
+}
+
+.shelf {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+
+.shelf-item {
+  font-size: 1.5rem;
+  background: rgba(255, 255, 255, 0.65);
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.customer-area {
+  background: #FFF8F2;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 말풍선 */
+.speech-bubble {
+  background: white;
+  border-radius: 18px;
+  padding: 14px 20px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.07);
+  border: 2.5px solid var(--pink);
+  position: relative;
+}
+
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -17px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 9px solid transparent;
+  border-top-color: var(--pink-dark);
+}
+
+.speech-customer-name {
+  font-weight: 700;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.88rem;
+}
+
+.speech-text {
+  color: #444;
+  line-height: 1.65;
+  font-size: 1rem;
+}
+
+.customer-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.customer-svg {
+  width: 130px;
+  height: 190px;
+}
+
+.customer-name-tag {
+  background: white;
+  border-radius: 20px;
+  padding: 3px 16px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+  margin-top: 4px;
+}
+
+/* 카운터 */
+.counter {
+  background: #7A5230;
+  padding: 14px 16px;
+}
+
+.counter-surface {
+  background: #9A6840;
+  border-radius: 12px;
+  padding: 10px 20px;
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+}
+
+.counter-item {
+  font-size: 1.5rem;
+}
+
+.btn-confirm {
+  background: linear-gradient(135deg, #98D8C8, #5BB8A8);
+  color: white;
+  font-size: 1.05rem;
+}
+
+/* ================================================
+   제작 화면
+   ================================================ */
+.craft-screen {
+  background: #FFF8F5;
+  padding: 14px;
+  gap: 10px;
+}
+
+/* 상단: 주문서 + 단계 표시 */
+.craft-header {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.order-receipt {
+  background: #FFFDE0;
+  border: 2px dashed #FFD700;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  flex: 1;
+  min-width: 180px;
+  font-size: 0.88rem;
+  line-height: 1.85;
+}
+
+.order-receipt h3 {
+  color: #B8860B;
+  margin-bottom: 5px;
+  font-size: 0.95rem;
+}
+
+.craft-stage {
+  background: white;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  flex: 1;
+  box-shadow: var(--shadow);
+  text-align: center;
+  min-width: 160px;
+}
+
+.stage-indicator {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.stage-message {
+  color: #E05050;
+  font-size: 0.82rem;
+  min-height: 1.2em;
+  margin-top: 4px;
+  transition: opacity 0.4s;
+}
+
+/* 재료 선택 영역 */
+.ingredients-area {
+  width: 100%;
+  background: white;
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+
+.ingredients-area.disabled {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.ingredient-group {
+  margin-bottom: 10px;
+}
+
+.ingredient-group:last-child {
+  margin-bottom: 0;
+}
+
+.group-label {
+  display: block;
+  font-weight: 700;
+  color: #777;
+  font-size: 0.82rem;
+  margin-bottom: 7px;
+}
+
+.ingredient-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.hint-text {
+  color: #ccc;
+  font-size: 0.88rem;
+  padding: 6px 0;
+}
+
+/* 재료 버튼 */
+.ingredient-btn {
+  padding: 7px 15px;
+  border: 2px solid #eee;
+  border-radius: 50px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+
+.ingredient-btn:hover:not(:disabled) {
+  border-color: var(--pink);
+  transform: translateY(-1px);
+}
+
+.ingredient-btn.selected {
+  border-color: var(--accent);
+  background: #FFF0F8;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.ingredient-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.base-circle {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--base-border, #ccc);
+  background: var(--base-color, white);
+  flex-shrink: 0;
+}
+
+.topping-symbol-btn {
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.count-badge {
+  background: var(--accent);
+  color: white;
+  border-radius: 50px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* 선택 요약 바 */
+.selection-summary {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #FFF0F8;
+  border-radius: 50px;
+  font-size: 0.82rem;
+}
+
+.selection-summary span {
+  background: white;
+  padding: 2px 11px;
+  border-radius: 50px;
+  border: 1px solid var(--pink);
+  color: #666;
+}
+
+/* ===== 믹싱 볼 ===== */
+.bowl-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.mixing-bowl {
+  width: 200px;
+  height: 150px;
+  border-radius: 0 0 100px 100px;
+  border: 3px solid #D0C0E0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(240, 235, 255, 0.4);
+  transition: background-color 0.5s ease;
+  box-shadow: inset 0 5px 14px rgba(0, 0, 0, 0.06), 0 4px 10px rgba(0, 0, 0, 0.07);
+}
+
+/* 섞기 애니메이션 */
+@keyframes shake-mix {
+  0%   { transform: rotate(0deg) scale(1); }
+  20%  { transform: rotate(-7deg) scale(1.03); }
+  40%  { transform: rotate(7deg) scale(1.03); }
+  60%  { transform: rotate(-6deg) scale(1.02); }
+  80%  { transform: rotate(6deg) scale(1.02); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+.mixing-bowl.mixing {
+  animation: shake-mix 0.28s ease-in-out infinite;
+}
+
+.mixing-bowl.packed {
+  background: rgba(255, 250, 200, 0.85) !important;
+  border-color: #FFD700;
+}
+
+/* 믹싱볼 안의 토핑 기호 */
+.bowl-contents {
+  position: absolute;
+  inset: 0;
+}
+
+.topping-symbol {
+  position: absolute;
+  font-size: 1.3rem;
+  transform: translate(-50%, -50%);
+  font-weight: 900;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+
+.bowl-empty {
+  color: #ccc;
+  font-size: 0.85rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* 포장 완료 */
+.packed-product {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: pop-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes pop-in {
+  from { transform: scale(0) rotate(-10deg); opacity: 0; }
+  to   { transform: scale(1) rotate(0deg);  opacity: 1; }
+}
+
+.bag-icon {
+  font-size: 2.8rem;
+}
+
+.packed-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #999;
+  text-align: center;
+}
+
+.bowl-label {
+  color: #bbb;
+  font-size: 0.78rem;
+}
+
+/* 액션 버튼 묶음 */
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+
+.btn-undo   { background: #f0f0f0; color: #666; }
+.btn-reset  { background: #FFE0E0; color: #CC3333; }
+.btn-mix    { background: linear-gradient(135deg, #C8A2C8, #9B6B9B); color: white; }
+.btn-pack   { background: linear-gradient(135deg, #FFD166, #F5A623); color: white; }
+.btn-deliver {
+  background: linear-gradient(135deg, #FF8FAB, #C060A0);
+  color: white;
+  font-size: 1.05rem;
+  padding: 13px 32px;
+}
+
+/* ================================================
+   평가 화면
+   ================================================ */
+.evaluation-screen {
+  min-height: 100vh;
+  justify-content: flex-start;
+  padding-top: 24px;
+}
+
+.eval-header {
+  text-align: center;
+}
+
+.eval-header h2 {
+  font-size: 1.7rem;
+  color: #444;
+  margin-bottom: 8px;
+}
+
+.grade-badge {
+  display: inline-block;
+  font-size: 1.05rem;
+  font-weight: 700;
+  padding: 8px 26px;
+  background: white;
+  border-radius: 50px;
+  box-shadow: var(--shadow);
+}
+
+.eval-content {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  max-width: 780px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.eval-customer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.eval-details {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.score-display {
+  text-align: center;
+}
+
+.score-number {
+  font-size: 3.2rem;
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.score-unit {
+  font-size: 1.2rem;
+  color: #aaa;
+}
+
+.money-earned {
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #E8900A;
+}
+
+/* 점수 항목별 내역 */
+.score-breakdown {
+  background: white;
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 0.88rem;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.breakdown-item:last-child {
+  border-bottom: none;
+}
+
+.breakdown-item.correct   { color: #3AB060; }
+.breakdown-item.incorrect { color: #E05050; }
+
+/* 주문 vs 실제 비교표 */
+.order-comparison {
+  display: flex;
+  gap: 10px;
+}
+
+.comparison-col {
+  flex: 1;
+  background: white;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 0.85rem;
+  line-height: 1.9;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.comparison-col h4 {
+  margin-bottom: 3px;
+  color: var(--accent);
+  font-size: 0.88rem;
+}
+
+.btn-next {
+  background: linear-gradient(135deg, #98D8C8, #5BB8A8);
+  color: white;
+  font-size: 1.05rem;
+  margin-top: auto;
+}
+
+/* ================================================
+   최종 결과 화면
+   ================================================ */
+.results-screen {
+  background: linear-gradient(150deg, #FFF0F8 0%, #EEE8FF 100%);
+  text-align: center;
+  justify-content: center;
+}
+
+.results-title {
+  font-size: 2rem;
+  color: var(--accent);
+  text-shadow: 2px 2px 0 var(--pink);
+}
+
+.results-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  width: 100%;
+  max-width: 580px;
+}
+
+.result-stat {
+  background: white;
+  border-radius: var(--radius);
+  padding: 16px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-shadow: var(--shadow);
+  min-width: 110px;
+}
+
+.result-stat.highlight {
+  border: 2.5px solid #FFD700;
+  background: #FFFDE7;
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  color: #aaa;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #444;
+}
+
+/* 손님별 점수 바 */
+.customer-scores {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.customer-score-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: white;
+  border-radius: 50px;
+  padding: 8px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.customer-score-item > span:first-child {
+  width: 38px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  text-align: left;
+}
+
+.customer-score-item > span:last-child {
+  width: 38px;
+  text-align: right;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--accent);
+}
+
+.score-bar-bg {
+  flex: 1;
+  height: 10px;
+  background: #f0f0f0;
+  border-radius: 50px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #FF8FAB, #C060A0);
+  border-radius: 50px;
+  width: 0%; /* 초기값 0, JS에서 애니메이션으로 채움 */
+  transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.overall-grade {
+  background: white;
+  border-radius: var(--radius);
+  padding: 20px 32px;
+  box-shadow: var(--shadow);
+  max-width: 380px;
+}
+
+.grade-emoji    { font-size: 3rem; margin-bottom: 8px; }
+.overall-comment { color: #555; font-size: 0.95rem; line-height: 1.65; }
+
+.btn-restart {
+  background: linear-gradient(135deg, #FF8FAB, #C060A0);
+  color: white;
+  font-size: 1.1rem;
+}
+
+/* ================================================
+   반응형: 화면이 좁아도 레이아웃이 유지되도록
+   ================================================ */
+@media (max-width: 620px) {
+  .game-title          { font-size: 1.7rem; }
+  .craft-header        { flex-direction: column; }
+  .eval-content        { flex-direction: column; }
+  .order-comparison    { flex-direction: column; }
+  .mixing-bowl         { width: 165px; height: 125px; }
+  .action-buttons .btn { padding: 10px 14px; font-size: 0.88rem; }
+  .score-number        { font-size: 2.5rem; }
+}
