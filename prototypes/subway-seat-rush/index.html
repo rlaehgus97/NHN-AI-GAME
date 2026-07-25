@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>지하철 자리 먼저 앉기 - 3D</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; height:100%; overflow:hidden;
+    background:#e9e9ec; font-family: system-ui, -apple-system, "Malgun Gothic", sans-serif; color:#2f2f2f; }
+  #app { position:fixed; inset:0; }
+  #cv { display:block; width:100%; height:100%; }
+
+  /* ---------- HUD (DOM 오버레이, 전부 무채색) ---------- */
+  #hud { position:fixed; inset:0; pointer-events:none; }
+
+  .panel { position:absolute; left:50%; top:24px; transform:translateX(-50%); width:min(460px,90vw);
+    opacity:0; transition:opacity .12s; }
+  .panel.on { opacity:1; }
+
+  .lbl { display:flex; justify-content:space-between; align-items:baseline;
+    font-size:14px; font-weight:800; margin-bottom:6px; text-shadow:0 1px 4px rgba(255,255,255,.9); }
+  .num { font-variant-numeric:tabular-nums; color:#555; font-weight:700; }
+
+  .bar { width:100%; height:24px; border:3px solid #2f2f2f; border-radius:12px;
+    background:rgba(255,255,255,.9); overflow:hidden; }
+  .fill { height:100%; width:0%; background:#2f2f2f; transition:width .06s linear; }
+  /* NPC 게이지: 색 대신 명도 + 사선 해치로 구분 (무채색 규칙) */
+  .fill.npc { background:repeating-linear-gradient(45deg,#6f6f6f,#6f6f6f 6px,#8c8c8c 6px,#8c8c8c 12px); }
+
+  #rowNpc { margin-top:7px; }
+  #rowNpc .bar { height:16px; border-width:2px; border-color:#6f6f6f; }
+
+  #timerBar { margin-top:7px; width:100%; height:6px; background:rgba(0,0,0,.12); border-radius:4px; overflow:hidden; }
+  #timerInner { height:100%; width:100%; background:#9a9a9a; }
+
+  #defOuter { width:100%; height:28px; border:3px solid #2f2f2f; border-radius:14px;
+    background:rgba(255,255,255,.9); overflow:hidden; position:relative; }
+  #defInner { height:100%; width:50%; background:#2f2f2f; transition:width .06s linear; }
+  #defMid { position:absolute; left:50%; top:0; width:2px; height:100%; background:rgba(0,0,0,.28); }
+  #defEnds { display:flex; justify-content:space-between; font-size:11px; font-weight:700;
+    color:#777; margin-top:4px; text-shadow:0 1px 4px rgba(255,255,255,.9); }
+
+  #result { position:absolute; left:50%; top:34%; transform:translate(-50%,-50%) scale(.9);
+    font-size:min(46px,9vw); font-weight:800; opacity:0; transition:opacity .15s, transform .15s;
+    white-space:nowrap; text-shadow:0 2px 12px rgba(255,255,255,.95); }
+  #result.on { opacity:1; transform:translate(-50%,-50%) scale(1); }
+  /* 성공/실패도 색 대신 명도로 구분 */
+  #result.good { color:#1f1f1f; }
+  #result.bad  { color:#8a8a8a; }
+
+  #stats { position:absolute; left:20px; top:18px;
+    background:rgba(255,255,255,.82); border-radius:16px; padding:8px 16px;
+    font-size:15px; font-weight:800; color:#2f2f2f; }
+  #hintbar { position:absolute; left:50%; bottom:16px; transform:translateX(-50%);
+    background:rgba(255,255,255,.82); border-radius:14px; padding:7px 16px;
+    font-size:13px; font-weight:700; color:#666; white-space:nowrap; max-width:94vw; }
+  #seatHint { position:absolute; top:0; left:0; transform:translate(-50%,-120%);
+    background:rgba(255,255,255,.92); border:2px solid #2f2f2f; border-radius:16px;
+    padding:4px 12px; font-size:14px; font-weight:800; color:#2f2f2f;
+    opacity:0; transition:opacity .1s; }
+  #seatHint.on { opacity:1; }
+  .bubble { position:absolute; top:0; left:0; transform:translate(-50%,-130%);
+    background:rgba(255,255,255,.92); border:2px solid #555; border-radius:14px;
+    padding:2px 10px; font-size:13px; font-weight:800; color:#444;
+    opacity:0; transition:opacity .1s; }
+  .bubble.on { opacity:1; }
+
+  #loading, #fatal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:#e9e9ec; font-size:16px; font-weight:700; color:#666; text-align:center; padding:24px; }
+  #loading.off, #fatal.off { display:none; }
+  #fatal { display:none; flex-direction:column; gap:10px; color:#933; }
+  #fatal.show { display:flex; }
+  code { background:#dcdce0; padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="app"><canvas id="cv"></canvas></div>
+
+<div id="hud">
+  <div id="stats">착석 0 · 퇴치 0 · 사수 0.0s</div>
+
+  <!-- 자리 경쟁 -->
+  <div id="mashBox" class="panel">
+    <div class="lbl"><span>SPACE 연타 — 자리 차지!</span><span class="num" id="mashNum">0 / 15</span></div>
+    <div class="bar"><div class="fill" id="mashInner"></div></div>
+    <div id="rowNpc"><div class="bar"><div class="fill npc" id="npcInner"></div></div></div>
+    <div id="timerBar"><div id="timerInner"></div></div>
+  </div>
+
+  <!-- 자리 지키기 -->
+  <div id="defBox" class="panel">
+    <div class="lbl"><span>SPACE 연타 — 밀어내기!</span><span class="num" id="defNum">웨이브 1</span></div>
+    <div id="defOuter"><div id="defInner"></div><div id="defMid"></div></div>
+    <div id="defEnds"><span>← 밀려남</span><span>퇴치 →</span></div>
+  </div>
+
+  <div id="result"></div>
+  <div id="seatHint">✨ [SPACE] 앉기!</div>
+  <div class="bubble" id="bubble"></div>
+  <div id="hintbar">이동 WASD·방향키 &nbsp;|&nbsp; 빈자리서 SPACE로 경쟁 &nbsp;|&nbsp; 앉은 뒤 NPC를 SPACE 연타로 밀어내기 &nbsp;|&nbsp; Q 일어나기</div>
+</div>
+
+<div id="loading">3D 로딩 중…</div>
+<div id="fatal">
+  <div>Three.js를 불러오지 못했습니다.</div>
+  <div style="font-size:13px;color:#777">인터넷 연결을 확인하거나, 네트워크 설정에서 <code>cdnjs.cloudflare.com</code> 접근을 허용해 주세요.</div>
+</div>
+
+<!-- Three.js: index(3).html과 동일하게 일반 script CDN (ES Module 아님, 전역 THREE) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+        onerror="document.getElementById('fatal').classList.add('show');document.getElementById('loading').classList.add('off');"></script>
+
+<script>
+(function () {
+"use strict";
+
+/* CDN 로드 실패 감지 */
+if (typeof THREE === "undefined") {
+  document.getElementById("fatal").classList.add("show");
+  document.getElementById("loading").classList.add("off");
+  return;
+}
+
+/* =====================================================================
+   1) CONFIG 및 기존 BAL  ── (게임 로직: 2D 버전에서 그대로 유지)
+   ===================================================================== */
+// 밸런스 수치는 2D 원본과 100% 동일 (임의 변경 금지 항목)
+const BAL = {
+  mashTarget:     15,     // 자리 경쟁: 게이지를 채우는 데 필요한 연타 수
+  mashTime:       3000,   // 자리 경쟁 제한 시간(ms)
+  npcMashSeconds: 3.4,    // NPC가 게이지를 다 채우는 데 걸리는 시간(초)
+  npcMashRamp:    0.15,   // 착석에 성공할수록 NPC가 빨라지는 정도(초)
+
+  defStart:       0.5,    // 줄다리기 시작 위치 (0=밀려남, 1=퇴치)
+  defPlayerPush:  0.055,  // SPACE 1회당 밀어내는 양
+  defNpcPush:     0.20,   // NPC가 초당 밀어붙이는 양
+  defNpcRamp:     0.035,  // 웨이브마다 증가량
+  waveFirstDelay: 2200,   // 착석 후 첫 NPC까지(ms)
+  waveGap:        3400,   // 이후 웨이브 간격(ms)
+  waveGapMin:     1500,
+  defGraceSec:    4,      // 줄다리기가 이 시간을 넘기면
+  defTimePressure:0.7,    // NPC가 초당 이만큼씩 더 세게 밀어붙임 (교착 방지)
+
+  npcContestBias: 0.75,   // NPC가 '플레이어와 가까운 자리'를 노릴 확률
+  npcSpeed:       1.7,    // NPC 이동 속도 (로직 px / 16.7ms)
+  maxNpc:         4
+};
+
+// --- 게임 로직은 2D 원본의 좌표계(px)를 그대로 사용한다. ---
+// 렌더링할 때만 3D 월드(unit)로 변환하므로 BAL/이동/판정이 원본과 동일하게 유지된다.
+// 로직 평면:  x = 가로(px),  y = 깊이(px, 작을수록 벤치 쪽/안쪽)
+const FLOOR_TOP = 210, FLOOR_BOTTOM = 560;   // 플레이어가 서서 다닐 수 있는 깊이 범위
+const BOUND_MIN = 180, BOUND_MAX = 780;      // 좌우 벽 (직사각형 방)
+const SEAT_Y    = 175;                        // 벤치(좌석 슬롯) 깊이
+const SPEED_X   = 4.0;                         // 가로 이동 (원본 유지)
+// 원본은 가짜 2.5D를 위해 세로 이동을 2.2로 느리게 눌렀지만, 실제 3D는 원근이 진짜라
+// 그 왜곡이 필요 없다. 전체 이동 체감을 비슷하게 두면서 세로 이동만 자연스럽게 상향.
+const SPEED_Z   = 3.6;
+const RANGE     = 92;                          // 좌석 상호작용 거리 (원본 유지)
+
+// 2D(px) → 3D(unit) 변환 상수
+const U = 0.02, CX = 480, CZ = 350;
+function worldX(x) { return (x - CX) * U; }
+function worldZ(y) { return (y - CZ) * U; }
+
+/* 상태 (2D 원본과 동일한 역할) */
+const S = { PLAY:0, MASH:1, RESULT:2, SEATED:3, DEFEND:4 };
+let state = S.PLAY, t = 0;
+
+/* =====================================================================
+   2) Three.js 초기화  ── (index(3).html 방식 참고: WebGLRenderer/Scene/Camera/Light/그림자)
+   ===================================================================== */
+const canvas = document.getElementById("cv");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));  // devicePixelRatio 제한
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+// 전체 장면이 흰색으로 날아가지 않도록 tone mapping + 노출 조정
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.92;
+
+const scene = new THREE.Scene();
+// 배경/안개는 매우 연한 회색 (순백보다 살짝 어둡게 두어 흰 구조물이 배경에 묻히지 않게)
+scene.background = new THREE.Color(0xf0f1f3);
+scene.fog = new THREE.Fog(0xf0f1f3, 20, 38);
+
+// 고정형 3인칭 3/4 시점 (1인칭·마우스 회전 없음)
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, 0.1, 100);
+const CAM_POS = new THREE.Vector3(0.4, 9.6, 11.6);
+const camTarget = new THREE.Vector3(0.4, 1.1, -1.2);   // 살짝만 플레이어를 따라감
+camera.position.copy(CAM_POS);
+camera.lookAt(camTarget);
+
+// 조명: 흰색 단색 월드라 형태를 오직 빛/그림자로 구분한다
+// 하늘/바닥 반사광 (약하게 — 흰 벽/캐릭터가 뭉개지지 않도록 ambient는 낮게)
+const hemi = new THREE.HemisphereLight(0xffffff, 0xc4c8cd, 0.55);
+scene.add(hemi);
+const amb = new THREE.AmbientLight(0xffffff, 0.18);   // 너무 밝지 않게
+scene.add(amb);
+// 주광 — 방향성 그림자로 형태와 접촉 그림자를 만든다
+const dir = new THREE.DirectionalLight(0xffffff, 1.05);
+dir.position.set(6, 13, 8);
+dir.castShadow = true;
+dir.shadow.mapSize.set(2048, 2048);
+dir.shadow.camera.near = 1; dir.shadow.camera.far = 40;
+dir.shadow.camera.left = -12; dir.shadow.camera.right = 12;
+dir.shadow.camera.top = 12; dir.shadow.camera.bottom = -12;
+dir.shadow.bias = -0.0004;
+dir.shadow.radius = 3;   // 부드러운 접촉 그림자
+scene.add(dir);
+// 반대쪽 보조광 (그림자 안쪽을 살짝만 채움)
+const fill = new THREE.DirectionalLight(0xffffff, 0.22);
+fill.position.set(-7, 6, 4);
+scene.add(fill);
+
+/* =====================================================================
+   3) 재질과 Geometry 생성 함수  ── 모든 오브젝트는 흰색 단색
+   ===================================================================== */
+function mat(rough, color) {
+  const c = color === undefined ? 0xffffff : color;
+  return new THREE.MeshStandardMaterial({ color:c, roughness:rough, metalness:0 });
+}
+// === 3단계 명암 체계 (오직 이 세 가지 밝기만 사용) ===
+//  1) 배경/구조물 : 흰색  #FFFFFF
+//  2) 캐릭터       : 연회색 #E6E6E6
+//  3) 벤치 좌석     : 중간회색 #808080
+const WHITE = 0xffffff, CHAR = 0xe6e6e6, SEATG = 0x808080;
+
+const M_WALL   = mat(0.95, WHITE);      // 벽
+const M_FLOOR  = mat(0.97, WHITE);      // 바닥
+const M_CEIL   = mat(0.95, WHITE);      // 천장
+const M_METAL  = mat(0.6,  WHITE);      // 기둥·손잡이 (구조물 → 흰색 유지)
+const M_SEAT   = mat(0.88, SEATG);      // 좌판·등받이·쿠션 → 중간회색
+const M_SEATFR = mat(0.92, WHITE);      // 좌석 프레임(다리)은 흰색 허용
+const M_BODY   = mat(0.82, CHAR);       // 캐릭터 전원 동일 연회색
+const M_DOOR   = mat(0.9,  WHITE);      // 문·창틀 → 흰색
+
+// r128에는 CapsuleGeometry가 없으므로 실린더+반구 조합으로 캡슐을 만든다
+function makeCapsule(radius, cylLen, material) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, Math.max(0.001, cylLen), 18), material);
+  const top  = new THREE.Mesh(new THREE.SphereGeometry(radius, 18, 12), material); top.position.y =  cylLen/2;
+  const bot  = new THREE.Mesh(new THREE.SphereGeometry(radius, 18, 12), material); bot.position.y = -cylLen/2;
+  [body, top, bot].forEach(m => { m.castShadow = true; m.receiveShadow = false; g.add(m); });
+  return g;
+}
+function box(w, h, d, material, cast, recv) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+  m.castShadow = !!cast; m.receiveShadow = !!recv;
+  return m;
+}
+function cyl(rt, rb, h, material, cast) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 16), material);
+  m.castShadow = !!cast;
+  return m;
+}
+
+/* =====================================================================
+   4) 지하철 환경 생성  ── 기본 Geometry만 사용
+   ===================================================================== */
+const ROOM = { halfW: 6.6, backZ: -4.6, frontZ: 5.2, ceilY: 4.7 };
+
+function buildSubway() {
+  const room = new THREE.Group();
+
+  // 바닥
+  const floor = box((ROOM.halfW*2+0.4), 0.2, (ROOM.frontZ-ROOM.backZ+0.4), M_FLOOR, false, true);
+  floor.position.set(0, -0.1, (ROOM.frontZ+ROOM.backZ)/2);
+  room.add(floor);
+
+  // === 천장 가림 문제 수정 ===
+  // 방 전체를 덮는 불투명 천장 박스를 제거하고, 카메라와 좌석 사이에는 어떤 전체 면도 두지 않는다.
+  // 위쪽이 열린 디오라마(단면 모형)처럼 좌우 가장자리에 좁은 천장 프레임만 남겨,
+  // 손잡이/가로 봉이 공중에 뜨지 않고 프레임에 연결된 것처럼 보이게 한다.
+  const ceilFrameW = 1.0;                                  // 가장자리 천장 폭
+  const ceilDepth = (ROOM.frontZ - ROOM.backZ + 0.4);
+  [-1, 1].forEach(sx => {
+    const strip = box(ceilFrameW, 0.2, ceilDepth, M_CEIL, false, false);
+    strip.position.set(sx*(ROOM.halfW - ceilFrameW/2), ROOM.ceilY, (ROOM.frontZ+ROOM.backZ)/2);
+    room.add(strip);
+  });
+  // 뒤 벽 위쪽을 마감하는 좁은 천장 보 (안쪽을 살짝만 덮어 벽/봉과 연결감을 줌)
+  const ceilBackBeam = box((ROOM.halfW*2+0.4), 0.2, 1.2, M_CEIL, false, false);
+  ceilBackBeam.position.set(0, ROOM.ceilY, ROOM.backZ + 0.6);
+  room.add(ceilBackBeam);
+
+  // 뒤 벽 (벤치가 붙는 벽)
+  const back = box((ROOM.halfW*2+0.4), ROOM.ceilY+0.2, 0.25, M_WALL, false, true);
+  back.position.set(0, ROOM.ceilY/2, ROOM.backZ);
+  room.add(back);
+
+  // 좌/우 벽
+  [-1, 1].forEach(sx => {
+    const w = box(0.25, ROOM.ceilY+0.2, (ROOM.frontZ-ROOM.backZ+0.4), M_WALL, false, true);
+    w.position.set(sx*ROOM.halfW, ROOM.ceilY/2, (ROOM.frontZ+ROOM.backZ)/2);
+    room.add(w);
+  });
+
+  // 뒤 벽 창문/패널 (얕은 박스 패널을 일정 간격으로)
+  for (let i = -2; i <= 2; i++) {
+    const panel = box(1.7, 1.15, 0.06, M_WALL, false, false);
+    panel.position.set(i*2.3, 2.7, ROOM.backZ + 0.16);
+    room.add(panel);
+  }
+  // 지하철 문 (뒤 벽 중앙, 양쪽으로 갈라진 형태)
+  [-1, 1].forEach(sx => {
+    const door = box(1.15, 3.0, 0.1, M_DOOR, false, false);
+    door.position.set(sx*0.62, 1.5, ROOM.backZ + 0.18);
+    room.add(door);
+    const win = box(0.75, 1.1, 0.04, M_DOOR, false, false);
+    win.position.set(sx*0.62, 2.15, ROOM.backZ + 0.24);
+    room.add(win);
+  });
+  // NPC 출입구 표시 (좌/우 벽 앞쪽 문)
+  [-1, 1].forEach(sx => {
+    const frame = box(0.12, 2.9, 1.5, M_WALL, false, false);
+    frame.position.set(sx*(ROOM.halfW-0.06), 1.45, 3.4);
+    room.add(frame);
+  });
+
+  // 세로 기둥
+  const poleXs = [-4.2, -1.4, 1.4, 4.2];
+  poleXs.forEach(px => {
+    const pole = cyl(0.09, 0.09, ROOM.ceilY, M_METAL, true);
+    pole.position.set(px, ROOM.ceilY/2, -1.2);
+    room.add(pole);
+  });
+  // 천장 가로 봉 + 손잡이
+  const rail = cyl(0.06, 0.06, ROOM.halfW*2 - 1, M_METAL, true);
+  rail.rotation.z = Math.PI/2;
+  rail.position.set(0, ROOM.ceilY - 0.5, -1.2);
+  room.add(rail);
+  // === 천장 가림 문제 수정 ===
+  // 전체 천장을 없앤 대신, 가로 봉 양 끝을 좌우 천장 프레임까지 잇는 짧은 연결 봉을 넣어
+  // 봉과 손잡이가 허공에 떠 보이지 않게 한다.
+  [-1, 1].forEach(sx => {
+    const drop = cyl(0.05, 0.05, 0.5, M_METAL, true);
+    drop.position.set(sx*(ROOM.halfW - 0.5), ROOM.ceilY - 0.25, -1.2);
+    room.add(drop);
+  });
+  for (let i = -5; i <= 5; i++) {
+    const strap = cyl(0.03, 0.03, 0.5, M_METAL, true);
+    strap.position.set(i*1.05, ROOM.ceilY - 0.85, -1.2);
+    room.add(strap);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.03, 8, 16), M_METAL);
+    ring.position.set(i*1.05, ROOM.ceilY - 1.18, -1.2);
+    ring.rotation.x = Math.PI/2; ring.castShadow = true;
+    room.add(ring);
+  }
+
+  scene.add(room);
+}
+
+/* ---- 일체형 벤치 (외형은 하나, 내부적으로 4개 슬롯) ---- */
+const SEAT_SURFACE_Y = 0.62;   // 방석 윗면 높이 (착석 기준)
+function buildBench() {
+  const g = new THREE.Group();
+  const bx0 = worldX(SEAT_slotX(0)), bx1 = worldX(SEAT_slotX(3));
+  const cx = (bx0 + bx1) / 2;
+  const width = (bx1 - bx0) + 2.4;
+  const z = worldZ(SEAT_Y);
+
+  // 방석(길게 이어진 하나의 좌판) — 좌석 사이를 강한 선/색으로 나누지 않음
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(width, 0.32, 1.5), M_SEAT);
+  seat.position.set(cx, SEAT_SURFACE_Y - 0.16, z);
+  seat.castShadow = true; seat.receiveShadow = true;
+  // 모서리 라운드 느낌: 앞쪽에 얕은 원기둥 덧대기
+  const lip = cyl(0.16, 0.16, width, M_SEAT, true);
+  lip.rotation.z = Math.PI/2;
+  lip.position.set(cx, SEAT_SURFACE_Y - 0.16, z + 0.75);
+  g.add(seat, lip);
+
+  // 등받이
+  const backrest = new THREE.Mesh(new THREE.BoxGeometry(width, 1.05, 0.28), M_SEAT);
+  backrest.position.set(cx, SEAT_SURFACE_Y + 0.5, z - 0.72);
+  backrest.castShadow = true; backrest.receiveShadow = true;
+  g.add(backrest);
+
+  // 아주 얕은 쿠션 굴곡(슬롯마다) — 색이 아니라 형태로만 살짝 구분
+  for (let i = 0; i < 4; i++) {
+    const cushion = new THREE.Mesh(new THREE.SphereGeometry(0.62, 20, 12), M_SEAT);
+    cushion.scale.set(1, 0.28, 0.7);
+    cushion.position.set(worldX(SEAT_slotX(i)), SEAT_SURFACE_Y + 0.02, z + 0.05);
+    cushion.castShadow = true;
+    g.add(cushion);
+  }
+  // 다리
+  [-1, 1].forEach(sx => {
+    const leg = box(0.16, SEAT_SURFACE_Y - 0.32, 0.9, M_SEATFR, true, false);
+    leg.position.set(cx + sx*(width/2 - 0.5), (SEAT_SURFACE_Y - 0.32)/2, z);
+    g.add(leg);
+  });
+
+  scene.add(g);
+}
+function SEAT_slotX(i) { return [300, 435, 570, 705][i]; }
+
+/* 접근 가능한 자리 표시용 바닥 링 (무채색) */
+let seatRing;
+function buildSeatRing() {
+  seatRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.5, 0.66, 32),
+    new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.9, side:THREE.DoubleSide })
+  );
+  seatRing.rotation.x = -Math.PI/2;
+  seatRing.position.y = 0.02;
+  seatRing.visible = false;
+  scene.add(seatRing);
+}
+
+/* =====================================================================
+   5) 캐릭터 생성 및 애니메이션  ── 기본 도형 조합, 전원 흰색
+   ===================================================================== */
+// 짧은 팔다리 + 통통한 몸통의 클레이 캐릭터. 관절 그룹을 회전시켜 애니메이션.
+function makeCharacter() {
+  const root = new THREE.Group();       // 월드 위치 + yaw
+  const squash = new THREE.Group();     // 스쿼시&스트레치용
+  root.add(squash);
+
+  const body = makeCapsule(0.5, 0.42, M_BODY);   // 몸통
+  body.position.y = 0.62;
+  squash.add(body);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 16), M_BODY);
+  head.position.y = 1.32; head.castShadow = true;
+  squash.add(head);
+
+  function limb(len, rad) {
+    const grp = new THREE.Group();       // 관절 원점
+    const cap = makeCapsule(rad, Math.max(0.001, len - rad*2), M_BODY);
+    cap.position.y = -len/2;
+    grp.add(cap);
+    const end = new THREE.Mesh(new THREE.SphereGeometry(rad*1.12, 12, 10), M_BODY);
+    end.position.y = -len; end.castShadow = true;
+    grp.add(end);
+    return grp;
+  }
+  const armL = limb(0.52, 0.15); armL.position.set(-0.5, 0.98, 0);
+  const armR = limb(0.52, 0.15); armR.position.set( 0.5, 0.98, 0);
+  const legL = limb(0.5, 0.19);  legL.position.set(-0.22, 0.5, 0);
+  const legR = limb(0.5, 0.19);  legR.position.set( 0.22, 0.5, 0);
+  squash.add(armL, armR, legL, legR);
+
+  // 발밑 접촉 그림자 (캐릭터가 바닥/벽과 같은 밝기로 뭉개지지 않도록 보강)
+  const blob = new THREE.Mesh(
+    new THREE.CircleGeometry(0.55, 24),
+    new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.14 })
+  );
+  blob.rotation.x = -Math.PI/2;
+  blob.position.y = 0.015;
+  root.add(blob);
+
+  root.userData = { squash, body, head, armL, armR, legL, legR, spin: 0, blob };
+  root.visible = false;
+  scene.add(root);
+  return root;
+}
+
+// clip: idle | move | mash | seated | knocked  (2D의 상태 → 포즈)
+function poseCharacter(root, clip, time, faceYaw, extra) {
+  const u = root.userData;
+  const sq = u.squash;
+  // 초기화
+  sq.rotation.set(0, 0, 0);
+  sq.scale.set(1, 1, 1);
+  sq.position.set(0, 0, 0);
+  u.armL.rotation.set(0,0,0); u.armR.rotation.set(0,0,0);
+  u.legL.rotation.set(0,0,0); u.legR.rotation.set(0,0,0);
+  root.rotation.set(0, faceYaw || 0, 0);
+
+  if (clip === "idle") {
+    const s = Math.sin(time * 0.0028);
+    sq.position.y = s * 0.04;
+    sq.scale.y = 1 + s * 0.02;
+    u.armL.rotation.z =  0.12; u.armR.rotation.z = -0.12;
+
+  } else if (clip === "move") {
+    const w = time * 0.014, s = Math.sin(w);
+    u.legL.rotation.x =  s * 0.7;  u.legR.rotation.x = -s * 0.7;
+    u.armL.rotation.x = -s * 0.6;  u.armR.rotation.x =  s * 0.6;
+    sq.position.y = Math.abs(Math.sin(w)) * 0.06;
+
+  } else if (clip === "mash") {
+    const w = time * 0.05, s = Math.sin(w);
+    // 팔을 위로 빠르게 퍼덕 + 몸통 좌우 흔들 + 스쿼시
+    u.armL.rotation.x = -1.5 + s * 0.9;
+    u.armR.rotation.x = -1.5 - s * 0.9;
+    u.armL.rotation.z =  0.3;  u.armR.rotation.z = -0.3;
+    sq.rotation.z = s * 0.12;
+    sq.scale.y = 1 + s * 0.08; sq.scale.x = 1 - s * 0.05;
+    sq.position.y = Math.abs(s) * 0.05;
+
+  } else if (clip === "seated") {
+    const s = Math.sin(time * 0.002);
+    // 무릎을 굽혀 앉은 포즈
+    u.legL.rotation.x = -1.45; u.legR.rotation.x = -1.45;
+    u.armL.rotation.x = -0.35; u.armR.rotation.x = -0.35;
+    u.armL.rotation.z =  0.18; u.armR.rotation.z = -0.18;
+    sq.position.y = -0.30 + s * 0.015;   // 엉덩이를 방석 높이로 내림
+
+  } else if (clip === "knocked") {
+    // 뒤로 튕기며 회전 (스핀은 sync에서 누적)
+    root.rotation.z = u.spin;
+    root.rotation.x = -0.5;
+    u.armL.rotation.x = -1.8; u.armR.rotation.x = -1.8;
+    u.legL.rotation.x =  0.6; u.legR.rotation.x =  0.6;
+  }
+
+  // 착지 스쿼시 (extra.land: 0..1)
+  if (extra && extra.land > 0) {
+    const k = extra.land;
+    sq.scale.y *= (1 - 0.18 * k);
+    sq.scale.x *= (1 + 0.14 * k);
+  }
+}
+
+/* =====================================================================
+   6) 좌석 슬롯 관리  ── 4개 독립 슬롯 (2D 원본 그대로)
+   ===================================================================== */
+// by: null | 'player' | npc객체   (원본과 동일한 점유 모델)
+const seats = [
+  { cx: SEAT_slotX(0), cy: SEAT_Y, by: null },
+  { cx: SEAT_slotX(1), cy: SEAT_Y, by: null },
+  { cx: SEAT_slotX(2), cy: SEAT_Y, by: null },
+  { cx: SEAT_slotX(3), cy: SEAT_Y, by: null }
+];
+function freeSeats() { return seats.filter(s => !s.by); }
+
+// NPC 목표 선정: 대부분 플레이어와 가까운 빈자리를 노려 경쟁이 자주 발생 (원본 유지)
+function pickTarget() {
+  const free = freeSeats();
+  if (!free.length) return null;
+  if (Math.random() < BAL.npcContestBias) {
+    return free.reduce((a, b) =>
+      Math.hypot(a.cx - player.x, a.cy - player.y) <= Math.hypot(b.cx - player.x, b.cy - player.y) ? a : b);
+  }
+  return free[Math.floor(Math.random() * free.length)];
+}
+
+/* =====================================================================
+   7) 플레이어 이동과 충돌  ── 로직은 2D 원본, 좌표만 x/y(px)
+   ===================================================================== */
+const stats = { sits: 0, repels: 0, hold: 0, bestHold: 0 };
+const player = { x: 480, y: 470, vx:0, vy:0, face:1, moving:false, clip:"idle", clipT:0, land:0 };
+
+let npcs = [];
+let mash = { seat:null, count:0, endAt:0, npc:null, npcFill:0 };
+let def  = { npc:null, value:0, wave:0, startAt:0 };
+let seatedOn = null, resultEndAt = 0, nextWaveAt = 0, spawnAt = 0;
+
+const keys = Object.create(null);
+const MOVE_KEYS = ["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright"];
+
+function clampPlayer() {
+  player.y = Math.max(FLOOR_TOP, Math.min(FLOOR_BOTTOM, player.y));
+  player.x = Math.max(BOUND_MIN, Math.min(BOUND_MAX, player.x));   // 벽 통과 금지 (직사각형 방)
+}
+function nearSeat() {
+  let best = null, bd = RANGE;
+  for (const s of seats) {
+    if (s.by) continue;
+    const d = Math.hypot(player.x - s.cx, (player.y - s.cy) * 1.5);
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best;
+}
+
+/* 입력 (원본 그대로: SPACE 경쟁/연타, Q 기립) */
+addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if (k === " " || MOVE_KEYS.includes(k)) e.preventDefault();
+  keys[k] = true;
+  if (k === " " && !e.repeat) onSpace();
+  if (k === "q" && (state === S.SEATED || state === S.DEFEND)) standUp();
+});
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+
+function onSpace() {
+  if (state === S.PLAY) {
+    const s = nearSeat();
+    if (s) startMash(s);
+  } else if (state === S.MASH) {
+    mash.count++;
+    if (mash.count >= BAL.mashTarget) endMash("player");
+  } else if (state === S.DEFEND) {
+    def.value += BAL.defPlayerPush;
+    if (def.value >= 1) endDefend(true);
+  }
+}
+
+/* =====================================================================
+   8) NPC 상태 머신  ── 2D 원본 로직 그대로
+   ===================================================================== */
+function spawnNpc(mode) {
+  if (npcs.length >= BAL.maxNpc) return null;
+  const fromLeft = Math.random() < 0.5;
+  const n = {
+    x: fromLeft ? 230 : 730,          // 좌/우 출입구 근처에서 진입
+    y: 480 + Math.random() * 50,
+    vx:0, vy:0, face: fromLeft ? 1 : -1,
+    state: mode || "seek", target: null, seat: null, side: undefined,
+    stateUntil: 0, clipT: Math.random() * 1000, spin: 0,
+    mesh: null, land: 0
+  };
+  if (n.state === "seek") {
+    const free = freeSeats();
+    if (free.length <= 1) return null;   // 마지막 한 자리는 남겨둔다 (원본 규칙)
+    n.target = pickTarget();
+  }
+  npcs.push(n);
+  return n;
+}
+// 자리를 잃으면 곧바로 다음 자리를 노리는 경쟁자를 붙여준다 (원본 유지)
+function spawnRival() {
+  const free = freeSeats();
+  if (!free.length || npcs.length >= BAL.maxNpc) return;
+  const seat = free.reduce((a, b) =>
+    Math.hypot(a.cx - player.x, a.cy - player.y) <= Math.hypot(b.cx - player.x, b.cy - player.y) ? a : b);
+  const n = spawnNpc("seek");
+  if (n) n.target = seat;
+}
+function moveToward(n, tx, ty, dt) {
+  const dx = tx - n.x, dy = ty - n.y;
+  const len = Math.hypot(dx, dy);
+  const sp = BAL.npcSpeed * (dt / 16.7);
+  if (len < 4) return true;
+  n.x += dx/len * sp * 1.6;
+  n.y += dy/len * sp;
+  if (Math.abs(dx) > 1) n.face = dx > 0 ? 1 : -1;
+  return len < 8;
+}
+
+function updateNpcs(now, dt) {
+  for (const n of npcs) {
+    n.clipT += dt;
+    if (n.land > 0) n.land = Math.max(0, n.land - dt / 220);
+    switch (n.state) {
+      case "seek": {
+        if (!n.target || n.target.by) {
+          const free = freeSeats();
+          if (free.length <= 1) { n.state = "leave"; break; }
+          n.target = pickTarget();
+          break;
+        }
+        if (moveToward(n, n.target.cx, n.target.cy + 8, dt)) {
+          if (state === S.MASH && mash.seat === n.target) break;   // 경쟁 중이면 대기
+          n.seat = n.target; n.target.by = n;
+          n.x = n.seat.cx; n.y = n.seat.cy;
+          n.state = "sit"; n.land = 1;
+          n.stateUntil = now + 5000 + Math.random() * 7000;
+        }
+        break;
+      }
+      case "sit": {
+        if (now > n.stateUntil) {
+          if (n.seat) n.seat.by = null;
+          n.seat = null; n.state = "leave";
+        }
+        break;
+      }
+      case "toPlayer": {
+        if (!seatedOn) { n.state = "leave"; break; }
+        if (n.side === undefined) n.side = n.x < seatedOn.cx ? -1 : 1;
+        const arrived = moveToward(n, seatedOn.cx + n.side * 58, seatedOn.cy + 4, dt);
+        if (arrived || now > n.stateUntil) {
+          n.x = seatedOn.cx + n.side * 58; n.y = seatedOn.cy + 4;
+          if (state === S.SEATED) startDefend(n);
+        }
+        break;
+      }
+      case "contest": {                          // 경쟁 중에도 자리를 향해 계속 다가온다
+        if (!mash.seat) { n.state = "seek"; break; }
+        const sx = mash.seat.cx + (n.x < mash.seat.cx ? -62 : 62);
+        moveToward(n, sx, mash.seat.cy + 6, dt);
+        break;
+      }
+      case "push":
+        break;                                    // 줄다리기 중 (고정)
+      case "knocked": {
+        n.x += n.vx; n.y += n.vy;
+        n.vx *= 0.88; n.vy *= 0.88;
+        n.spin += dt * 0.012;
+        if (now > n.stateUntil) n.state = "leave";
+        break;
+      }
+      case "leave": {
+        moveToward(n, n.x < 480 ? 120 : 840, 500, dt);
+        break;
+      }
+    }
+    n.y = Math.max(140, Math.min(FLOOR_BOTTOM, n.y));   // 벤치 슬롯(175)까지 접근 허용
+  }
+  npcs = npcs.filter(n => {
+    const gone = n.state === "leave" && (n.x < 130 || n.x > 830);
+    if (gone && n.mesh) { scene.remove(n.mesh); n.mesh = null; }
+    return !gone;
+  });
+
+  // 안전장치: 빈자리가 하나도 없으면 가장 오래 앉은 NPC를 먼저 하차 (원본 유지)
+  if (!seatedOn && freeSeats().length === 0) {
+    let oldest = null;
+    for (const n of npcs) if (n.state === "sit" && (!oldest || n.stateUntil < oldest.stateUntil)) oldest = n;
+    if (oldest) oldest.stateUntil = Math.min(oldest.stateUntil, now + 600);
+  }
+}
+
+/* =====================================================================
+   9) 자리 경쟁 MASH  ── 2D 원본 로직 그대로
+   ===================================================================== */
+function startMash(seat) {
+  state = S.MASH;
+  player.face = seat.cx >= player.x ? 1 : -1;
+
+  let rival = null, bd = 460;
+  for (const n of npcs) {
+    if (n.state !== "seek" || n.target !== seat) continue;
+    const d = Math.hypot(n.x - seat.cx, n.y - seat.cy);
+    if (d < bd) { bd = d; rival = n; }
+  }
+  if (rival) { rival.state = "contest"; rival.face = seat.cx >= rival.x ? 1 : -1; }
+
+  mash = { seat, count:0, endAt: performance.now() + BAL.mashTime, npc: rival, npcFill: 0 };
+  UI.mashBox.classList.add("on");
+  UI.rowNpc.style.display = rival ? "block" : "none";
+  updateMashUI(1);
+}
+function updateMashUI(timeRatio) {
+  UI.mashInner.style.width = Math.min(1, mash.count / BAL.mashTarget) * 100 + "%";
+  UI.npcInner.style.width  = Math.min(1, mash.npcFill) * 100 + "%";
+  UI.timerInner.style.width = Math.max(0, timeRatio) * 100 + "%";
+  UI.mashNum.textContent = mash.count + " / " + BAL.mashTarget;
+}
+function endMash(winner) {
+  const seat = mash.seat, rival = mash.npc;
+  UI.mashBox.classList.remove("on");
+  state = S.RESULT;
+  resultEndAt = performance.now() + 1200;
+
+  if (winner === "player") {
+    seat.by = "player"; seatedOn = seat; stats.sits++; stats.hold = 0;
+    player.x = seat.cx; player.y = seat.cy; player.vx = player.vy = 0; player.land = 1;
+    if (rival) knockBack(rival, seat.cx, seat.cy);
+    showResult(rival ? "성공! 뺏었다" : "성공! 자리 착석", true);
+    def.wave = 0;
+    nextWaveAt = performance.now() + 1200 + BAL.waveFirstDelay;
+  } else {
+    seatedOn = null;
+    if (rival) {
+      rival.state = "sit"; rival.seat = seat; seat.by = rival;
+      rival.x = seat.cx; rival.y = seat.cy; rival.land = 1;
+      rival.stateUntil = performance.now() + 6000 + Math.random() * 6000;
+    }
+    pushPlayerFrom(seat.cx, seat.cy);
+    showResult(winner === "npc" ? "실패! 뺏겼다" : "실패! 놓쳤다", false);
+    spawnRival();
+  }
+  mash.seat = null; mash.npc = null;
+}
+function pushPlayerFrom(x, y) {
+  const dx = player.x - x, dy = player.y - y + 26;
+  const len = Math.hypot(dx, dy) || 1;
+  player.vx = dx/len * 13; player.vy = dy/len * 7;
+}
+function knockBack(n, x, y) {
+  const dx = n.x - x, dy = n.y - y + 20;
+  const len = Math.hypot(dx, dy) || 1;
+  n.vx = dx/len * 11; n.vy = dy/len * 6;
+  n.state = "knocked"; n.stateUntil = performance.now() + 700;
+  n.seat = null; n.target = null; n.side = undefined; n.spin = 0;
+}
+
+/* =====================================================================
+   10) 자리 지키기 DEFEND  ── 2D 원본 로직 그대로
+   ===================================================================== */
+function startDefend(n) {
+  state = S.DEFEND;
+  def.npc = n; def.value = BAL.defStart; def.wave++; def.startAt = performance.now();
+  n.state = "push";
+  UI.defBox.classList.add("on");
+  UI.defNum.textContent = "웨이브 " + def.wave;
+  updateDefUI();
+}
+function updateDefUI() {
+  UI.defInner.style.width = Math.max(0, Math.min(1, def.value)) * 100 + "%";
+}
+function endDefend(repelled) {
+  const n = def.npc, seat = seatedOn;
+  UI.defBox.classList.remove("on");
+  state = S.RESULT;
+  resultEndAt = performance.now() + 1000;
+
+  if (repelled) {
+    stats.repels++;
+    knockBack(n, seat.cx, seat.cy);
+    showResult("퇴치! 자리 사수", true);
+    nextWaveAt = performance.now() + 1000 +
+      Math.max(BAL.waveGapMin, BAL.waveGap - def.wave * 220);
+  } else {
+    seat.by = n; n.state = "sit"; n.seat = seat;
+    n.x = seat.cx; n.y = seat.cy; n.land = 1;
+    n.stateUntil = performance.now() + 6000 + Math.random() * 6000;
+    seatedOn = null;
+    pushPlayerFrom(seat.cx, seat.cy);
+    showResult("밀려남! 자리 뺏김", false);
+    spawnRival();
+  }
+  def.npc = null;
+}
+function standUp() {
+  if (seatedOn) { seatedOn.by = null; seatedOn = null; }
+  player.y = Math.min(FLOOR_BOTTOM, player.y + 58);
+  clampPlayer();
+  stats.hold = 0;
+  state = S.PLAY;
+}
+function showResult(text, good) {
+  UI.result.textContent = text;
+  UI.result.className = "on " + (good ? "good" : "bad");
+}
+
+/* =====================================================================
+   11) UI 업데이트  ── 기존 DOM HUD 재사용 (무채색)
+   ===================================================================== */
+const UI = {
+  mashBox: document.getElementById("mashBox"),
+  defBox:  document.getElementById("defBox"),
+  rowNpc:  document.getElementById("rowNpc"),
+  mashInner: document.getElementById("mashInner"),
+  npcInner:  document.getElementById("npcInner"),
+  timerInner:document.getElementById("timerInner"),
+  mashNum:   document.getElementById("mashNum"),
+  defInner:  document.getElementById("defInner"),
+  defNum:    document.getElementById("defNum"),
+  result:    document.getElementById("result"),
+  stats:     document.getElementById("stats"),
+  seatHint:  document.getElementById("seatHint"),
+  bubble:    document.getElementById("bubble")
+};
+
+const _v = new THREE.Vector3();
+function projectToScreen(wx, wy, wz) {
+  _v.set(wx, wy, wz).project(camera);
+  return {
+    x: (_v.x * 0.5 + 0.5) * window.innerWidth,
+    y: (-_v.y * 0.5 + 0.5) * window.innerHeight,
+    behind: _v.z > 1
+  };
+}
+
+function updateHUD() {
+  const hold = (seatedOn ? stats.hold : stats.bestHold) / 1000;
+  UI.stats.textContent = "착석 " + stats.sits + " · 퇴치 " + stats.repels +
+                         " · 사수 " + hold.toFixed(1) + "s";
+
+  // 접근 가능한 빈자리: 링 + SPACE 안내
+  if (state === S.PLAY) {
+    const s = nearSeat();
+    if (s) {
+      seatRing.visible = true;
+      seatRing.position.set(worldX(s.cx), 0.02, worldZ(s.cy) + 0.75);
+      const p = projectToScreen(worldX(s.cx), 1.4, worldZ(s.cy));
+      UI.seatHint.style.left = p.x + "px";
+      UI.seatHint.style.top = p.y + "px";
+      UI.seatHint.classList.toggle("on", !p.behind);
+    } else {
+      seatRing.visible = false;
+      UI.seatHint.classList.remove("on");
+    }
+  } else {
+    seatRing.visible = false;
+    UI.seatHint.classList.remove("on");
+  }
+
+  // 경쟁/밀어내기 말풍선 (canvas가 아닌 DOM으로 투영)
+  let bubbleNpc = null, bubbleText = "";
+  if (state === S.MASH && mash.npc) { bubbleNpc = mash.npc; bubbleText = "내 자리야!"; }
+  else if (state === S.DEFEND && def.npc) { bubbleNpc = def.npc; bubbleText = "비켜!"; }
+  if (bubbleNpc) {
+    const p = projectToScreen(worldX(bubbleNpc.x), 2.1, worldZ(bubbleNpc.y));
+    UI.bubble.textContent = bubbleText;
+    UI.bubble.style.left = p.x + "px";
+    UI.bubble.style.top = p.y + "px";
+    UI.bubble.classList.toggle("on", !p.behind);
+  } else {
+    UI.bubble.classList.remove("on");
+  }
+}
+
+/* =====================================================================
+   12) 게임 업데이트  ── 2D 원본 update() 그대로 (렌더만 3D로 분리)
+   ===================================================================== */
+function update(now, dt) {
+  t += dt;
+  player.moving = false;
+  if (player.land > 0) player.land = Math.max(0, player.land - dt / 220);
+
+  if (state === S.PLAY) {
+    let dx = 0, dy = 0;
+    if (keys.a || keys.arrowleft)  dx -= 1;
+    if (keys.d || keys.arrowright) dx += 1;
+    if (keys.w || keys.arrowup)    dy -= 1;   // 위(w) = 벤치 쪽(안쪽, y 감소)
+    if (keys.s || keys.arrowdown)  dy += 1;
+    if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
+    if (dx) player.face = dx > 0 ? 1 : -1;
+    player.x += dx * SPEED_X;
+    player.y += dy * SPEED_Z;
+    player.moving = !!(dx || dy);
+    clampPlayer();
+
+    if (now > spawnAt) {
+      spawnNpc("seek");
+      spawnAt = now + 2600 + Math.random() * 2600;
+    }
+
+  } else if (state === S.MASH) {
+    const left = mash.endAt - now;
+    if (mash.npc) {
+      const sec = Math.max(1.6, BAL.npcMashSeconds - stats.sits * BAL.npcMashRamp);
+      mash.npcFill += (dt / 1000) / sec;
+      if (mash.npcFill >= 1) { endMash("npc"); return; }
+    }
+    updateMashUI(left / BAL.mashTime);
+    if (left <= 0) { endMash("timeout"); return; }
+
+  } else if (state === S.SEATED) {
+    stats.hold += dt;
+    if (stats.hold > stats.bestHold) stats.bestHold = stats.hold;
+    if (now > nextWaveAt) {
+      let n = spawnNpc("toPlayer");
+      if (!n) {
+        n = npcs.find(x => x.state === "seek" || x.state === "leave");
+        if (n) { n.state = "toPlayer"; n.target = null; }
+      }
+      if (n) { n.side = n.x < seatedOn.cx ? -1 : 1; n.stateUntil = now + 5000; }
+      nextWaveAt = now + (n ? 6000 : 900);
+    }
+
+  } else if (state === S.DEFEND) {
+    stats.hold += dt;
+    if (stats.hold > stats.bestHold) stats.bestHold = stats.hold;
+    const over = Math.max(0, (now - def.startAt) / 1000 - BAL.defGraceSec);
+    const rate = (BAL.defNpcPush + def.wave * BAL.defNpcRamp) * (1 + over * BAL.defTimePressure);
+    def.value -= rate * (dt / 1000);
+    updateDefUI();
+    if (def.value <= 0) { endDefend(false); return; }
+
+  } else if (state === S.RESULT) {
+    if (!seatedOn) {
+      player.x += player.vx; player.y += player.vy;
+      player.vx *= 0.86; player.vy *= 0.86;
+      clampPlayer();
+    }
+    if (now >= resultEndAt) {
+      UI.result.className = "";
+      if (seatedOn) { state = S.SEATED; }
+      else { state = S.PLAY; stats.hold = 0; spawnAt = Math.min(spawnAt, now + 800); }
+    }
+  }
+
+  updateNpcs(now, dt);
+
+  // 플레이어 애니메이션 클립 선택
+  let clip;
+  if (state === S.MASH || state === S.DEFEND) clip = "mash";
+  else if (seatedOn) clip = "seated";
+  else if (player.moving) clip = "move";
+  else clip = "idle";
+  if (clip !== player.clip) { player.clip = clip; player.clipT = 0; }
+  player.clipT += dt;
+}
+
+/* ---- 로직 좌표 → 3D 씬 반영 ---- */
+function faceYawOf(face, clip) {
+  if (clip === "seated") return 0;               // 앉으면 정면(통로 쪽)
+  return face > 0 ? 0.5 : -0.5;                  // 이동/경쟁 시 살짝 측면
+}
+function syncEntity(root, e, clip) {
+  root.visible = true;
+  root.position.x = worldX(e.x);
+  root.position.z = worldZ(e.y);
+  root.position.y = 0;
+  poseCharacter(root, clip, e.clipT !== undefined ? e.clipT : e.clipT, faceYawOf(e.face, clip),
+                { land: e.land || 0 });
+}
+function playerClip() {
+  if (state === S.MASH || state === S.DEFEND) return "mash";
+  if (seatedOn) return "seated";
+  if (player.moving) return "move";
+  return "idle";
+}
+function npcClip(n) {
+  if (n.state === "sit") return "seated";
+  if (n.state === "push" || n.state === "contest") return "mash";
+  if (n.state === "knocked") return "knocked";
+  return "move";
+}
+
+function sync3D() {
+  // 플레이어
+  const pClip = playerClip();
+  playerMesh.visible = true;
+  playerMesh.position.set(worldX(player.x), 0, worldZ(player.y));
+  poseCharacter(playerMesh, pClip, player.clipT, faceYawOf(player.face, pClip), { land: player.land });
+
+  // NPC (메시 풀 없이 개별 생성/제거)
+  for (const n of npcs) {
+    if (!n.mesh) n.mesh = makeCharacter();
+    const c = npcClip(n);
+    n.mesh.userData.spin = n.spin;
+    n.mesh.visible = true;
+    n.mesh.position.set(worldX(n.x), 0, worldZ(n.y));
+    poseCharacter(n.mesh, c, n.clipT, faceYawOf(n.face, c), { land: n.land });
+  }
+
+  // 카메라: 아주 약하게 플레이어를 따라감 (심하게 움직이지 않음)
+  const tx = 0.4 + worldX(player.x) * 0.12;
+  camTarget.x += (tx - camTarget.x) * 0.05;
+  camera.position.x += (CAM_POS.x + worldX(player.x) * 0.06 - camera.position.x) * 0.05;
+  camera.lookAt(camTarget);
+}
+
+/* =====================================================================
+   13) 렌더 루프와 부팅
+   ===================================================================== */
+let playerMesh;
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+}
+window.addEventListener("resize", onResize);
+
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(40, now - last);   // 탭 복귀 시 순간이동 방지 (dt 상한)
+  last = now;
+  update(now, dt);
+  sync3D();
+  updateHUD();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+function boot() {
+  buildSubway();
+  buildBench();
+  buildSeatRing();
+  playerMesh = makeCharacter();
+  playerMesh.visible = true;
+
+  document.getElementById("loading").classList.add("off");
+  last = performance.now();
+  spawnAt = last + 1200;
+  requestAnimationFrame(loop);
+}
+
+try {
+  boot();
+} catch (err) {
+  console.error(err);
+  const f = document.getElementById("fatal");
+  f.querySelector("div").textContent = "초기화 오류: " + err.message;
+  f.classList.add("show");
+  document.getElementById("loading").classList.add("off");
+}
+})();
+</script>
+</body>
+</html>
