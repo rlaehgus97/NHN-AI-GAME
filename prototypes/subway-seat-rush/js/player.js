@@ -20,6 +20,17 @@
     return best;
   }
 
+  // 모든 캐릭터가 같은 위치·회전·크기로 앉도록 하는 공통 착석 포즈
+  function placeCharacterOnSeat(character, seat){
+    character.position.set(
+      seat.x,
+      CAR.seatSitY,
+      seat.z + seat.face*CAR.seatSitOffset
+    );
+    character.rotation.y = seat.face>0 ? 0 : Math.PI;
+    character.scale.set(1,CAR.seatedScaleY,1);
+  }
+
   // seat: 대상 좌석, msg: 착석 시 표시할 기본 메시지(양보받은 좌석이면 전용 메시지로 대체됨)
   function sitOnSeat(seat, msg){
     const wasReserved = (seat.reservedFor==='player');
@@ -28,7 +39,10 @@
     seat.reservedFor=null; seat.reservedTimer=0;
     G.occupiedSeat = seat;
     setPosture(Posture.SEATED);
-    player.position.set(seat.x, CAR.seatSitY, seat.z + (seat.face>0? 0.05 : -0.05));
+    placeCharacterOnSeat(player, seat);
+    AudioFX.play('sit');
+    VisualFX.burst(seat.x, 1.05, seat.z, 0xf6c344, 12);
+    VisualFX.flash('success');
     showCenter(wasReserved ? '양보받은 자리에 앉았습니다!' : (msg || '착석했습니다'), false, 1.4);
   }
   function standUpFromSeat(){
@@ -37,6 +51,7 @@
     setPosture(Posture.STANDING);
     G.risingTimer = BALANCE.standUpDelay; // 일어나는 동안 짧은 지연(이동/공격 불가)
     if (s) player.position.set(s.x, 0, s.interactionPoint.z);
+    AudioFX.play('stand');
   }
   function grabHandle(h){
     h.occupied=true; h.occupant='player'; G.heldHandle=h;
@@ -51,7 +66,7 @@
   function setPosture(p){
     G.posture = p;
     // 시각적 구분
-    if (p===Posture.SEATED){ player.scale.set(1,0.72,1); }
+    if (p===Posture.SEATED){ player.scale.set(1,CAR.seatedScaleY,1); }
     else { player.scale.set(1,1,1); }
     // 손잡이: 오른팔 위로
     if (player.userData.armR){
@@ -70,6 +85,7 @@
     G.bagAttack.phase = 'WINDUP';
     G.bagAttack.timer = 0;
     G.bagAttack.hasHit = false;
+    AudioFX.play('swing');
   }
 
   // 실제 판정: STRIKE 모션 중간 구간에서 단 한 번만 호출됨
@@ -89,7 +105,9 @@
         hitAny=true;
       }
     });
-    if (hitAny){ G.shake = Math.max(G.shake, 0.25); showCenter('퍽! 민폐 승객을 밀어냈습니다', false, 0.8); }
+    if (hitAny){ G.shake = Math.max(G.shake, 0.25); AudioFX.play('hit');
+      VisualFX.burst(player.position.x,1,player.position.z,0xff6b4a,14); VisualFX.flash('danger');
+      showCenter('퍽! 민폐 승객을 밀어냈습니다', false, 0.8); }
   }
 
   // 가방 공격 모션(어깨/손 피벗)과 판정 타이밍을 매 프레임 갱신
@@ -242,8 +260,14 @@
     if (G.stun>0) G.stun-=dt;
 
     // 살짝 걷기 바운스
-    if ((mx||mz) && canMove){ player.position.y = Math.abs(Math.sin(performance.now()*0.012))*0.05; }
-    else player.position.y = Math.max(0, player.position.y-dt*0.5);
+    if (G.posture===Posture.SEATED && G.occupiedSeat){
+      // 걷기 바운스 복귀 코드가 착석 높이를 0으로 내려버리지 않도록 포즈를 고정한다.
+      placeCharacterOnSeat(player, G.occupiedSeat);
+    } else if ((mx||mz) && canMove){
+      player.position.y = Math.abs(Math.sin(performance.now()*0.012))*0.05;
+    } else {
+      player.position.y = Math.max(0, player.position.y-dt*0.5);
+    }
   }
 
   /* ============ Interaction prompt (TRAVELING/ARRIVAL) ============ */

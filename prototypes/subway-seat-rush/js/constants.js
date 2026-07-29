@@ -89,4 +89,6 @@
   // 차량 내부 경계 (aisle)
   const CAR = { xMin:-7.3, xMax:7.3, aisleZMin:-1.25, aisleZMax:1.25,
                 doorX:1.5, platformZ:-3.6, farWallZ:-2.2, nearWallZ:2.2,
-                seatSitY: 0.46 };  // 착석 시 좌석 위에 앉도록 올려주는 높이
+                seatSitY: 0.68,       // 캐릭터 하체가 좌석 상판에 묻히지 않는 착석 높이
+                seatSitOffset: 0.10,  // NPC와 플레이어가 함께 쓰는 착석 중심 위치
+                seatedScaleY: 0.82 };
