@@ -47,6 +47,20 @@
   #centerMsg.show span { opacity:1; }
   #centerMsg.warn span { background: rgba(180,30,30,.9); }
 
+  #soundToggle { position:fixed; right:14px; bottom:14px; z-index:40; width:42px; height:42px;
+        border:1px solid rgba(255,255,255,.8); border-radius:50%; background:rgba(25,30,38,.76);
+        color:#fff; font-size:19px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.22);
+        transition:transform .15s, background .15s; }
+  #soundToggle:hover { transform:scale(1.08); background:rgba(243,156,18,.92); }
+  #soundToggle.muted { opacity:.55; filter:grayscale(1); }
+
+  #screenFx { position:fixed; inset:0; z-index:8; pointer-events:none; opacity:0; }
+  #screenFx.flash { animation:screenFlash .34s ease-out; }
+  #screenFx.danger { background:radial-gradient(circle,transparent 35%,rgba(218,45,32,.48) 100%); }
+  #screenFx.success { background:radial-gradient(circle,rgba(255,238,120,.35),transparent 68%); }
+  #screenFx.brake { background:linear-gradient(90deg,rgba(255,255,255,.42),transparent 22%,transparent 78%,rgba(255,255,255,.42)); }
+  @keyframes screenFlash { 0%{opacity:.95} 100%{opacity:0} }
+
   /* 좌석 경쟁 게이지 */
   #seatGaugeWrap { bottom: 90px; left:50%; transform:translateX(-50%); text-align:center; display:none; }
   #seatGaugeWrap.show { display:block; }

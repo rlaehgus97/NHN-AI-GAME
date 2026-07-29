@@ -111,7 +111,7 @@
       const s = G.occupiedSeat;
       standUpFromSeat();
       if (s && yn){ s.occupied=true; s.occupant=yn; yn.seated=true; yn.seatRef=s;
-        yn.mesh.position.set(s.x,CAR.seatSitY,s.z); yn.mesh.scale.set(1,0.72,1); }
+        placeCharacterOnSeat(yn.mesh, s); }
       showCenter('자리를 양보했습니다. 명예 +'+BALANCE.yieldSeatHonorReward, false, 1.8);
       // 선행에 대한 보답: 앉아있던 다른 승객 중 1명이 무조건 감동해서 자리를 양보함
       attemptSeatReward('당신의 선행을 지켜본 승객이 있습니다!');
@@ -127,10 +127,13 @@
 
   function triggerSuddenStopWarn(){
     G.flags.suddenStopWarned = true;
+    AudioFX.play('warning');
     showCenter('열차가 급정거합니다! 손잡이를 잡으세요!', true, 1.5);
   }
   function doSuddenStop(){
     G.flags.suddenStopDone = true;
+    AudioFX.play('brake');
+    VisualFX.flash('brake');
     G.shake = Math.max(G.shake, 0.5);
     if (G.posture===Posture.SEATED){
       damage(BALANCE.suddenStopDamage * BALANCE.suddenStopSeatedMultiplier); // 가장 안전하지만 완전 무적은 아님

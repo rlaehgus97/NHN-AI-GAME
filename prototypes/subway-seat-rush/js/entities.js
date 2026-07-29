@@ -75,6 +75,9 @@
       backpackPivot: mesh.userData.backpackPivot || null
     };
     villains.push(v);
+    AudioFX.play(type==='drunk' ? 'villain' : 'backpack');
+    VisualFX.flash('danger');
+    VisualFX.burst(x,1,0.2,type==='drunk'?0xe74c3c:0x9b59b6,16);
     showCenter(type==='drunk'? '⚠ 만취 비틀이 등장!' : '⚠ 백팩 회전맨 등장!', true, 1.6);
     return v;
   }

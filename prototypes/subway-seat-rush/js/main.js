@@ -5,6 +5,7 @@
   function enterState(s){
     G.state = s; G.stateTimer = 0;
     if (s===GameState.BOARDING){
+      AudioFX.play('approach');
       G.doorsOpen = false;
       closeDoors();
       // 플레이어는 승강장에서 대기 (문이 열려야 탑승 가능) — 차량(전방, +z) 방향을 바라보게 함
@@ -17,6 +18,7 @@
       showCenter('좌석 경쟁! 빈자리로!', false, 1.4);
     }
     else if (s===GameState.TRAVELING){
+      document.body.classList.add('train-moving');
       UI.seatWrap.classList.remove('show');
       closeDoors();
       // 안전장치: 문이 닫히는 순간 아직 승강장에 남아있으면 차량 안으로 이동시킴
@@ -33,6 +35,7 @@
       showCenter('출발합니다. 45초간 생존!', false, 1.4);
     }
     else if (s===GameState.ARRIVAL){
+      document.body.classList.remove('train-moving');
       openDoors();
       exitMarker.material.opacity = 0.55;
       showCenter('목적지입니다. 문으로 이동하세요!', false, 2.2);
@@ -57,8 +60,8 @@
     }
   }
 
-  function openDoors(){ G.doorsOpen=true; }
-  function closeDoors(){ G.doorsOpen=false; }
+  function openDoors(){ if(!G.doorsOpen) AudioFX.play('doorOpen'); G.doorsOpen=true; }
+  function closeDoors(){ if(G.doorsOpen) AudioFX.play('doorClose'); G.doorsOpen=false; }
 
   function updateDoors(dt){
     const halfDoor = CAR.doorX;
@@ -145,6 +148,8 @@
   function endGame(success, reason){
     if (G.state===GameState.CLEAR || G.state===GameState.GAME_OVER) return;
     G.state = success ? GameState.CLEAR : GameState.GAME_OVER;
+    document.body.classList.remove('train-moving');
+    AudioFX.stop(); AudioFX.play(success?'success':'fail');
     const ov = document.getElementById('resultOverlay');
     document.getElementById('resultTitle').textContent = success? '🎉 생존 성공!' : '💀 GAME OVER';
     document.getElementById('resultReason').textContent = reason;
@@ -171,9 +176,12 @@
     });
     handles.forEach(h=>{ h.occupied=false; h.occupant=null; });
     exitMarker.material.opacity = 0.0;
+    VisualFX.clear();
   }
 
   function startNewGame(){
+    AudioFX.ensure();
+    AudioFX.start();
     // 오버레이 정리
     document.getElementById('startScreen').classList.add('hidden');
     document.getElementById('resultOverlay').classList.add('hidden');
@@ -224,6 +232,7 @@
       updateStates(dt);
     }
     updateDoors(dt);
+    VisualFX.update(dt);
     updateCamera(dt);
 
     // 중앙 메시지 페이드
@@ -297,6 +306,12 @@
     document.getElementById('reloadBtn').addEventListener('click', ()=>location.reload());
     document.getElementById('choice1').addEventListener('click', ()=>{ if(G.state===GameState.EVENT) resolveYield(1); });
     document.getElementById('choice2').addEventListener('click', ()=>{ if(G.state===GameState.EVENT) resolveYield(2); });
+    document.getElementById('soundToggle').addEventListener('click', e=>{
+      const muted=AudioFX.toggle();
+      e.currentTarget.textContent=muted?'🔇':'🔊';
+      e.currentTarget.classList.toggle('muted',muted);
+      e.currentTarget.setAttribute('aria-label',muted?'소리 켜기':'소리 끄기');
+    });
   }
 
   function main(){

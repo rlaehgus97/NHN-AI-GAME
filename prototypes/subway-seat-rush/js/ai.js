@@ -137,7 +137,7 @@
     if (s.occupied || s.reservedFor) return; // 예약된 좌석(빌런 퇴치 보상)은 NPC가 앉을 수 없음
     s.occupied=true; s.occupant=n; n.seated=true; n.seatRef=s;
     s.captureProgress=0; s.npcProgress=0; s.npcClaimantRef=null;
-    n.mesh.position.set(s.x, CAR.seatSitY, s.z); n.mesh.scale.set(1,0.72,1);
+    placeCharacterOnSeat(n.mesh, s);
   }
 
   function moveNPCTo(n, tx, tz, dt){

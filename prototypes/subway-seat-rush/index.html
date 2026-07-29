@@ -42,6 +42,8 @@
   </div>
 
   <div id="centerMsg" class="hud"><span></span></div>
+  <div id="screenFx" aria-hidden="true"></div>
+  <button id="soundToggle" type="button" aria-label="소리 끄기" title="소리 켜기/끄기">🔊</button>
 
   <div id="seatGaugeWrap" class="hud">
     <div id="seatGaugeLabel">자리 차지! SPACE 연타</div>
@@ -95,6 +97,8 @@
   <!-- 게임 스크립트: 의존 관계상 아래 순서로 로드 -->
   <script src="js/constants.js"></script>
   <script src="js/state.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/effects.js"></script>
   <script src="js/scene.js"></script>
   <script src="js/entities.js"></script>
   <script src="js/player.js"></script>
@@ -103,4 +107,4 @@
   <script src="js/ui.js"></script>
   <script src="js/main.js"></script>
 </body>
-</html> 
+</html>
