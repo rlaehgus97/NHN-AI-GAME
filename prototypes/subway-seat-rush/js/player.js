@@ -33,7 +33,7 @@
 
   // seat: 대상 좌석, msg: 착석 시 표시할 기본 메시지(양보받은 좌석이면 전용 메시지로 대체됨)
   function sitOnSeat(seat, msg){
-    const wasReserved = (seat.reservedFor==='player');
+    const wasReserved = (seat.reservedFor==='player' || seat.reservedFor==='player-safety');
     seat.occupied=true; seat.occupant='player';
     seat.captureProgress=0; seat.npcProgress=0; seat.npcClaimantRef=null;
     seat.reservedFor=null; seat.reservedTimer=0;
@@ -52,6 +52,7 @@
     G.risingTimer = BALANCE.standUpDelay; // 일어나는 동안 짧은 지연(이동/공격 불가)
     if (s) player.position.set(s.x, 0, s.interactionPoint.z);
     AudioFX.play('stand');
+    ensurePlayerSafetyResources();
   }
   function grabHandle(h){
     h.occupied=true; h.occupant='player'; G.heldHandle=h;
@@ -95,6 +96,7 @@
     let hitAny=false;
     villains.forEach(v=>{
       if (v.defeated) return;
+      if(v.type==='climate' || v.type==='umbrella') return;
       const dx=v.x-px, dz=v.z-pz;
       const d = Math.hypot(dx,dz);
       if (d>BALANCE.bagAttackRange || d<0.01) return;
@@ -166,6 +168,7 @@
   function defeatVillain(v){
     v.defeated=true; v.state='DEFEATED';
     scene.remove(v.mesh);
+    if(v.zoneMesh) scene.remove(v.zoneMesh);
     // 퇴치와 공격 판정이 같은 프레임에 겹쳐도 플레이어 입력 잠금이 남지 않게 한다.
     G.stun=0;
     G.risingTimer=0;
@@ -214,7 +217,7 @@
   }
 
   // 플레이어-NPC 간단 밀어내기
-  function resolveNPCPush(){
+  function resolveNPCPush(dt){
     const px=player.position.x, pz=player.position.z;
     npcs.forEach(n=>{
       if (n.seated) return;
@@ -222,7 +225,7 @@
       const d=Math.hypot(dx,dz);
       const min=0.75;
       if (d<min && d>0.001){
-        const push=(min-d)/2;
+        const push=Math.min((min-d)/2,1.1*dt);
         n.mesh.position.x -= dx/d*push;
         n.mesh.position.z -= dz/d*push;
         n.x=n.mesh.position.x; n.z=n.mesh.position.z;
@@ -259,7 +262,7 @@
     }
     if (mx||mz){
       const len=Math.hypot(mx,mz); mx/=len; mz/=len;
-      const spd = (keys['shift']? BALANCE.dashSpeed : BALANCE.moveSpeed);
+      const spd = (keys['shift']? BALANCE.dashSpeed : BALANCE.moveSpeed)*getPlayerHazardSpeedMultiplier();
       let nx=player.position.x+mx*spd*dt;
       let nz=player.position.z+mz*spd*dt;
       const r=resolvePlayerBounds(nx,nz);
@@ -267,6 +270,25 @@
       G.facing.set(mx,mz);
       // 바라보는 방향
       player.rotation.y = Math.atan2(mx, mz);
+    }
+
+    if(G.surgeTimer>0){
+      G.surgeTimer=Math.max(0,G.surgeTimer-dt);
+      if(G.posture===Posture.STANDING){
+        // 대량 하차 인파는 벽(-z 직선)이 아니라 실제 출입문 중앙으로 수렴한다.
+        const doorTargetX=0;
+        const doorTargetZ=CAR.platformZ-0.6;
+        const surgeDX=doorTargetX-player.position.x;
+        const surgeDZ=doorTargetZ-player.position.z;
+        const surgeDistance=Math.hypot(surgeDX,surgeDZ)||1;
+        const surgeSpeed=1.3;
+        const nextX=player.position.x+surgeDX/surgeDistance*surgeSpeed*dt;
+        const nextZ=player.position.z+surgeDZ/surgeDistance*surgeSpeed*dt;
+        const surgeBounds=resolvePlayerBounds(nextX,nextZ);
+        player.position.x=surgeBounds.x; player.position.z=surgeBounds.z;
+        G.facing.set(surgeDX/surgeDistance,surgeDZ/surgeDistance);
+        player.rotation.y=Math.atan2(G.facing.x,G.facing.y);
+      }
     }
 
     updateBagAttack(dt);
@@ -290,6 +312,11 @@
     const px=player.position.x, pz=player.position.z;
 
     if (G.state===GameState.ARRIVAL){
+      if(G.doorBlocker && !G.doorBlocker.cleared &&
+        Math.hypot(px-G.doorBlocker.x,pz-G.doorBlocker.z)<1.5){
+        setInteract('E: 문 앞 승객을 옆으로 치우기');
+        return;
+      }
       if (G.posture!==Posture.STANDING) setInteract('E: 일어나서 문으로 이동하세요');
       else setInteract('문으로 이동하세요! (출구로 하차)');
       return;
@@ -317,7 +344,9 @@
     const px=player.position.x, pz=player.position.z;
     if (G.posture===Posture.SEATED){ standUpFromSeat(); return; }
     if (G.posture===Posture.HOLDING_HANDLE){ releaseHandle(); return; }
+    if(tryClearDoorBlocker()) return;
     if (G.state===GameState.TRAVELING){
+      if(hasNearbyUtilityVillain()) return;
       // 좌석은 E로 즉시 앉지 않고 항상 SPACE 연타(좌석 게이지)로만 앉을 수 있음
       const handle = nearestFreeHandle(px,pz,1.1);
       if (handle){ grabHandle(handle); showCenter('손잡이를 잡았습니다', false, 1.0); return; }

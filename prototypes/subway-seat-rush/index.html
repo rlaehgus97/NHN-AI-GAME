@@ -12,7 +12,7 @@
   <!-- ============ HUD ============ -->
   <div id="hudLeft" class="hud">
     <div class="hudBlock">
-      <div class="barLabel"><span>❤ 체력</span><span id="healthNum">100</span></div>
+      <div class="barLabel"><span>😵 통근 스트레스</span><span id="healthNum">0</span></div>
       <div class="bar"><span id="healthFill"></span></div>
       <div id="healthWarn"></div>
       <div class="barLabel" style="margin-top:6px"><span>⭐ 명예</span><span id="honorNum">50</span></div>
@@ -55,7 +55,7 @@
     <div class="panel">
       <h1>🚇 지옥철 생존기</h1>
       <p>퇴근길 지옥철. 역별 이벤트를 버텨 목적지에서 직접 하차하라.</p>
-      <p>체력을 지키고, 명예를 잃지 말 것.</p>
+      <p>통근 스트레스를 관리하고, 명예를 잃지 말 것.</p>
       <div class="ctrlList">
         <div><b>WASD</b> 이동</div>
         <div><b>SHIFT</b> 대시</div>
@@ -93,19 +93,20 @@
 
   <!-- Three.js (UMD 전역 빌드 — file:// 에서도 바로 실행 가능) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script type="module" src="js/modules/runtime.js"></script>
+  <script type="module" src="js/modules/runtime.js?v=stage-systems-4"></script>
 
   <!-- 게임 스크립트: 의존 관계상 아래 순서로 로드 -->
-  <script src="js/constants.js"></script>
-  <script src="js/state.js"></script>
-  <script src="js/audio.js"></script>
+  <script src="js/constants.js?v=stage-systems-4"></script>
+  <script src="js/state.js?v=stage-systems-5"></script>
+  <script src="js/audio.js?v=stage-systems-4"></script>
   <script src="js/effects.js"></script>
   <script src="js/scene.js"></script>
-  <script src="js/entities.js"></script>
-  <script src="js/player.js"></script>
-  <script src="js/ai.js"></script>
-  <script src="js/systems.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/hazards.js?v=stage-systems-5"></script>
+  <script src="js/entities.js?v=stage-systems-9"></script>
+  <script src="js/player.js?v=stage-systems-8"></script>
+  <script src="js/ai.js?v=stage-systems-8"></script>
+  <script src="js/systems.js?v=stage-systems-4"></script>
+  <script src="js/ui.js?v=stage-systems-5"></script>
+  <script src="js/main.js?v=stage-systems-9"></script>
 </body>
 </html>

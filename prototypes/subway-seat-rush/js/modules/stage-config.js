@@ -11,6 +11,5 @@ export const STAGE_ONE = {
     destinationArrival: 70,
     doorsClose: 75
   },
-  eventPool: ["sudden-stop", "backpack", "drunk"]
+  eventPool: ["sudden-stop", "backpack", "drunk", "broth", "climate", "umbrella"]
 };
-

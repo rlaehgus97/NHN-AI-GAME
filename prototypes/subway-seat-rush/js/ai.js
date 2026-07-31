@@ -48,13 +48,38 @@
           n.boardingDelay=Math.max(0,n.boardingDelay-dt);
           return;
         }
-        const entered=moveNPCTo(n,n.boardTarget.x,n.boardTarget.z,dt);
+        const entered=window.GameModules
+          ? window.GameModules.MovementSystem.moveTowards(n,n.boardTarget,dt,{
+              speed:n.moveSpeed||2.6,stopDistance:.15,
+              bounds:{xMin:-CAR.doorX+.15,xMax:CAR.doorX-.15,zMin:CAR.platformZ-2,zMax:CAR.aisleZMax}
+            })
+          : moveNPCTo(n,n.boardTarget.x,n.boardTarget.z,dt);
         if(entered){
           n.boardingAtStation=false;
-          const slot=getStandingSlot(n);
+          const slot=ensureIdleTarget(n);
           n.wanderTX=slot.x;
           n.wanderTZ=slot.z;
           n.wanderTimer=0;
+        }
+        return;
+      }
+
+      // 초기 승객은 상태 전환 후에도 기존 진입 경로를 끝까지 이어간다.
+      if(n.initialSettling && n.entryTarget){
+        const settled=moveNPCTo(n,n.entryTarget.x,n.entryTarget.z,dt);
+        applySmoothNPCSeparation(n,dt,.82);
+        if(!settled) return;
+        n.initialSettling=false;
+      }
+
+      // 빌런 회피 중에는 좌석/대기점 이동을 동시에 적용하지 않는다.
+      if(n.avoidVillainTarget){
+        n.targetSeat=null;
+        n.seatApproachPhase=null;
+        const escaped=moveNPCTo(n,n.avoidVillainTarget.x,n.avoidVillainTarget.z,dt);
+        if(escaped && n.avoidVillainTimer<=0){
+          n.avoidVillainTarget=null;
+          n.fleeingVillain=false;
         }
         return;
       }
@@ -69,42 +94,21 @@
       const s = n.avoidSeatTimer>0 ? null : n.targetSeat;
 
       if (s){
+        n.idleTarget=null;
         // 단순화 규칙: 빈 좌석의 상호작용 지점에 먼저 도착한 대상이 즉시 차지한다.
-        const arrived = moveNPCTo(n, s.interactionPoint.x, s.interactionPoint.z, dt);
+        const arrived = moveNPCToSeat(n,s,dt);
         if (arrived && !s.occupied && !s.reservedFor){
           npcSit(n, s);
         }
       } else {
         // 갈 수 있는 좌석이 없으면 개체별 대기 슬롯 주변을 움직여 한곳에 뭉치지 않게 한다.
-        n.wanderTimer -= dt;
-        const slot = getStandingSlot(n);
-        if (n.wanderTZ<CAR.aisleZMin || n.wanderTZ>CAR.aisleZMax){
-          n.wanderTX=slot.x; n.wanderTZ=slot.z; n.wanderTimer=0;
-        }
-        const dx=n.wanderTX-n.x, dz=n.wanderTZ-n.z;
-        const d=Math.hypot(dx,dz);
-        if (d<0.25 || n.wanderTimer<=0){
-          n.wanderTX = THREE.MathUtils.clamp(slot.x+(Math.random()-0.5)*0.45,CAR.xMin,CAR.xMax);
-          n.wanderTZ = THREE.MathUtils.clamp(slot.z+(Math.random()-0.5)*0.25,CAR.aisleZMin,CAR.aisleZMax);
-          n.wanderTimer = 2.2 + Math.random()*2.5;
-        } else {
-          const spd = n.wanderSpeed || 1.5;
-          n.x += dx/d*spd*dt; n.z += dz/d*spd*dt;
-          n.x = THREE.MathUtils.clamp(n.x, CAR.xMin, CAR.xMax);
-          n.z = THREE.MathUtils.clamp(n.z, CAR.aisleZMin, CAR.aisleZMax);
-          n.mesh.position.set(n.x, Math.abs(Math.sin(performance.now()*0.011+n.wobble))*0.05, n.z);
-          n.mesh.rotation.y = Math.atan2(dx,dz);
-        }
+        const slot = ensureIdleTarget(n);
+        n.wanderTX=slot.x; n.wanderTZ=slot.z;
+        const arrived=moveNPCToIdleSlot(n,slot,dt);
+        n.mesh.position.y=arrived ? 0 : Math.abs(Math.sin(performance.now()*0.011+n.wobble))*0.035;
       }
 
-      // NPC끼리 가볍게 밀어내기 (겹침 방지)
-      npcs.forEach(m=>{
-        if (m===n || m.seated) return;
-        const ddx=n.x-m.x, ddz=n.z-m.z; const dd=Math.hypot(ddx,ddz);
-        if (dd<0.7 && dd>0.001){ const p=(0.7-dd)/2; n.x+=ddx/dd*p; n.z+=ddz/dd*p;
-          n.z=THREE.MathUtils.clamp(n.z,CAR.aisleZMin,CAR.aisleZMax);
-          n.mesh.position.x=n.x; n.mesh.position.z=n.z; }
-      });
+      applySmoothNPCSeparation(n,dt,.9);
     });
 
     updateNPCSeatPoses();
@@ -120,11 +124,33 @@
     });
   }
 
+  function applySmoothNPCSeparation(n,dt,minDistance){
+    let pushX=0,pushZ=0;
+    npcs.forEach(m=>{
+      if(m===n || m.seated || m.disembarking) return;
+      let dx=n.x-m.x,dz=n.z-m.z;
+      let d=Math.hypot(dx,dz);
+      if(d<.001){
+        dx=(n.standingIndex%2===0?1:-1);dz=(n.standingIndex%3===0?.35:-.35);d=Math.hypot(dx,dz);
+      }
+      if(d<minDistance){const strength=(minDistance-d)/minDistance;pushX+=dx/d*strength;pushZ+=dz/d*strength;}
+    });
+    const length=Math.hypot(pushX,pushZ);
+    if(length<=.001) return;
+    const step=Math.min(.55*dt,length*.08);
+    n.x=THREE.MathUtils.clamp(n.x+pushX/length*step,CAR.xMin,CAR.xMax);
+    n.z=THREE.MathUtils.clamp(n.z+pushZ/length*step,CAR.aisleZMin,CAR.aisleZMax);
+    n.mesh.position.x=n.x;n.mesh.position.z=n.z;
+  }
+
   // 빈 좌석과 서 있는 경쟁자가 함께 있으면 1초 안에 가장 가까운 NPC가 좌석을 채우게 한다.
   function ensureEmptySeatGetsFilled(dt){
-    const empty=seats.find(s=>!s.occupied && !s.reservedFor);
+    const empty=seats.find(s=>!s.occupied && !s.reservedFor &&
+      !npcs.some(n=>!n.seated && n.targetSeat===s));
     const candidates=npcs.filter(n=>n.kind==='competitor' && !n.seated &&
-      !n.disembarking && !n.boardingAtStation);
+      !n.disembarking && !n.boardingAtStation && !n.avoidVillainTarget &&
+      n.avoidSeatTimer<=0 &&
+      (!n.targetSeat || n.targetSeat.occupied || n.targetSeat.reservedFor));
     if(!empty || !candidates.length){
       G.emptySeatFillTimer=0;
       return;
@@ -137,21 +163,62 @@
     });
     closest.avoidSeatTimer=0;
     closest.targetSeat=empty;
-    if(G.emptySeatFillTimer>=1.0 && !empty.occupied){
-      npcSit(closest,empty);
-      G.emptySeatFillTimer=0;
-    }
+    // Never snap a distant passenger into the seat. updateUnseatedCompetitors
+    // performs the walk and calls npcSit only after reaching the interaction point.
+    if(G.emptySeatFillTimer>=1.0) G.emptySeatFillTimer=0;
   }
 
-  function getStandingSlot(n){
-    const index=n.standingIndex||0;
-    const columns=7;
-    const column=index%columns;
-    const row=Math.floor(index/columns)%2;
-    return {
-      x:-6.0+column*2.0,
-      z:row===0 ? -0.55 : 0.55
-    };
+  function ensureIdleTarget(n){
+    if(n.idleTarget) return n.idleTarget;
+    const candidates=[];
+    for(let row=0;row<2;row++){
+      for(let column=0;column<10;column++){
+        candidates.push({
+          x:THREE.MathUtils.clamp(-6.5+column*1.44+row*0.72,CAR.xMin+0.4,CAR.xMax-0.4),
+          z:row===0?-0.55:0.55
+        });
+      }
+    }
+    const claimed=npcs.filter(o=>o!==n && o.idleTarget).map(o=>o.idleTarget);
+    const free=candidates.filter(slot=>!claimed.some(used=>Math.hypot(slot.x-used.x,slot.z-used.z)<0.7));
+    const pool=free.length ? free : candidates;
+    pool.sort((a,b)=>dist2(n.x,n.z,a.x,a.z)-dist2(n.x,n.z,b.x,b.z));
+    n.idleTarget={x:pool[0].x,z:pool[0].z};
+    return n.idleTarget;
+  }
+
+  function moveNPCToSeat(n,seat,dt){
+    const aisleEntryZ=THREE.MathUtils.clamp(n.z,CAR.aisleZMin+0.12,CAR.aisleZMax-0.12);
+    if(n.z<CAR.aisleZMin || n.z>CAR.aisleZMax){
+      n.seatApproachPhase='ENTER_AISLE';
+      moveNPCTo(n,n.x,aisleEntryZ,dt);
+      return false;
+    }
+    if(Math.abs(n.x-seat.interactionPoint.x)>0.22){
+      n.seatApproachPhase='ALONG_AISLE';
+      moveNPCTo(n,seat.interactionPoint.x,0,dt);
+      return false;
+    }
+    n.seatApproachPhase='TO_SEAT';
+    return moveNPCTo(n,seat.interactionPoint.x,seat.interactionPoint.z,dt);
+  }
+
+  function moveNPCToIdleSlot(n,slot,dt){
+    const dx=slot.x-n.x,dz=slot.z-n.z;
+    const distance=Math.hypot(dx,dz);
+    if(distance<0.08){
+      n.mesh.position.y=0;
+      // 정지한 NPC가 맞은편 NPC를 계속 응시하지 않도록 객차 진행 방향을 바라본다.
+      n.mesh.rotation.y=0;
+      return true;
+    }
+    const step=Math.min(distance,Math.max(1.15,n.wanderSpeed||0)*dt);
+    n.x+=dx/distance*step;
+    n.z+=dz/distance*step;
+    n.mesh.position.x=n.x;
+    n.mesh.position.z=n.z;
+    n.mesh.rotation.y=Math.atan2(dx,dz);
+    return false;
   }
 
   // SEAT_RUSH 단계에서 매 프레임 호출되는 통합 함수(게이지 UI + NPC 이동/점유)
@@ -160,19 +227,21 @@
     updateUnseatedCompetitors(dt);
   }
 
-  // SEAT_RUSH 종료 시 호출: 아직 못 앉은 경쟁 NPC를 남은 빈 좌석에 즉시 배정해
-  // "좌석은 항상 꽉 차야 한다"는 규칙을 애니메이션 타이밍과 무관하게 보장한다.
-  // (플레이어를 포함해 인원이 좌석보다 1명 많으므로, 정산 후에는 정확히 1명만 서 있게 된다)
+  // 좌석 경쟁 종료 직전에는 좌표를 순간 변경하지 않고 목표만 확정한다.
+  // NPC는 TRAVELING 전환 뒤에도 동일한 경로를 이어 걸어가 좌석에 도착한 뒤 착석한다.
   function settleRemainingSeats(){
-    const unseated = npcs.filter(n=> n.kind==='competitor' && !n.seated);
-    const empty = seats.filter(s=> !s.occupied && !s.reservedFor);
-    for (let i=unseated.length-1;i>0;i--){
-      const j=Math.floor(Math.random()*(i+1));
-      const tmp=unseated[i]; unseated[i]=unseated[j]; unseated[j]=tmp;
-    }
-    for (let i=0;i<Math.min(unseated.length, empty.length); i++){
-      npcSit(unseated[i], empty[i]);
-    }
+    const unseated=npcs.filter(n=>n.kind==='competitor' && !n.seated && !n.disembarking);
+    const claimed=new Set(unseated
+      .filter(n=>n.targetSeat && !n.targetSeat.occupied && !n.targetSeat.reservedFor)
+      .map(n=>n.targetSeat));
+    unseated.forEach(n=>{
+      if(n.avoidSeatTimer>0 || (n.targetSeat && claimed.has(n.targetSeat))) return;
+      const available=seats
+        .filter(s=>!s.occupied && !s.reservedFor && !claimed.has(s))
+        .sort((a,b)=>dist2(n.x,n.z,a.interactionPoint.x,a.interactionPoint.z)-
+          dist2(n.x,n.z,b.interactionPoint.x,b.interactionPoint.z));
+      if(available[0]){n.targetSeat=available[0];claimed.add(available[0]);}
+    });
   }
 
   // 좌석별로 이미 그 좌석을 노리는 NPC 수를 페널티로 고려해, 특정 좌석에 몰리지 않게 분산시킴
@@ -193,6 +262,7 @@
     if (s.occupied || s.reservedFor) return; // 예약된 좌석(빌런 퇴치 보상)은 NPC가 앉을 수 없음
     if (window.GameModules && !window.GameModules.SeatCompetition.npcArrived(s,n)) return;
     s.occupied=true; s.occupant=n; n.seated=true; n.seatRef=s;
+    n.seatApproachPhase=null;
     s.captureProgress=0; s.npcProgress=0; s.npcClaimantRef=null;
     placeCharacterOnSeat(n.mesh, s);
     n.x=n.mesh.position.x;
@@ -242,14 +312,7 @@
         n.mesh.position.set(n.x, Math.abs(Math.sin(performance.now()*0.011+n.wobble))*0.05, n.z);
         n.mesh.rotation.y = Math.atan2(dx,dz);
       }
-      // NPC끼리 가볍게 밀어내기 (겹침 방지)
-      npcs.forEach(m=>{
-        if (m===n || m.seated) return;
-        const ddx=n.x-m.x, ddz=n.z-m.z; const dd=Math.hypot(ddx,ddz);
-        if (dd<0.7 && dd>0.001){ const p=(0.7-dd)/2; n.x+=ddx/dd*p; n.z+=ddz/dd*p;
-          n.z=THREE.MathUtils.clamp(n.z,CAR.aisleZMin,CAR.aisleZMax);
-          n.mesh.position.x=n.x; n.mesh.position.z=n.z; }
-      });
+      applySmoothNPCSeparation(n,dt,.78);
     });
   }
 
@@ -264,7 +327,7 @@
       const targetX = n.exitTargetX;
       const targetZ = n.disembarkPhase==='THROUGH_DOOR'
         ? CAR.platformZ-1.2
-        : CAR.farWallZ+0.65;
+        : n.exitQueueZ;
       const dx=targetX-n.x, dz=targetZ-n.z;
       const d=Math.hypot(dx,dz);
       if (d<0.3){
@@ -290,10 +353,13 @@
   function beginNPCDisembark(n){
     if(n.disembarking) return;
     const activeCount=npcs.filter(o=>o.disembarking).length;
-    const lanes=[-1.05,-0.7,-0.35,0,0.35,0.7,1.05];
+    const lanes=G.doorBlocker && !G.doorBlocker.cleared
+      ? [-1.25,-0.82,-0.4,0.4,0.82,1.25]
+      : [-1.05,-0.7,-0.35,0,0.35,0.7,1.05];
     n.disembarking=true;
     n.disembarkPhase='TO_DOOR';
     n.exitTargetX=lanes[activeCount%lanes.length];
+    n.exitQueueZ=CAR.farWallZ+0.55+Math.floor(activeCount/lanes.length)*0.65;
     n.targetSeat=null;
     if(n.seated && n.seatRef){
       n.x=n.mesh.position.x;
@@ -310,27 +376,29 @@
   function updateNPCAvoidVillains(dt){
     npcs.forEach(n=>{
       if(n.seated || n.disembarking || n.isYielder) return;
-      let pushX=0, pushZ=0;
+      if(n.avoidVillainTimer>0) n.avoidVillainTimer=Math.max(0,n.avoidVillainTimer-dt);
+      let nearest=null,nearestDistance=Infinity;
       villains.forEach(v=>{
         if(v.defeated) return;
-        const dx=n.x-v.x, dz=n.z-v.z;
-        const d=Math.hypot(dx,dz);
-        if(d>0.01 && d<2.25){
-          const strength=(2.25-d)/2.25;
-          pushX+=dx/d*strength;
-          pushZ+=dz/d*strength;
-        }
+        const d=Math.hypot(n.x-v.x,n.z-v.z);
+        if(d<nearestDistance){nearestDistance=d;nearest=v;}
       });
-      const length=Math.hypot(pushX,pushZ);
-      if(length<=0.01) return;
-      const speed=1.4;
-      n.x=THREE.MathUtils.clamp(n.x+pushX/length*speed*dt,CAR.xMin,CAR.xMax);
-      n.z=THREE.MathUtils.clamp(n.z+pushZ/length*speed*dt,CAR.aisleZMin,CAR.aisleZMax);
-      n.wanderTX=n.x+pushX/length;
-      n.wanderTZ=n.z+pushZ/length;
-      n.wanderTimer=Math.max(n.wanderTimer,0.8);
-      n.mesh.position.set(n.x,Math.abs(Math.sin(performance.now()*0.011+n.wobble))*0.05,n.z);
-      n.mesh.rotation.y=Math.atan2(pushX,pushZ);
+      if(nearest && nearestDistance<2.25 && (!n.avoidVillainTarget || n.avoidVillainTimer<=0)){
+        const awayX=n.x-nearest.x;
+        const directionX=Math.abs(awayX)>0.12 ? Math.sign(awayX) : (n.standingIndex%2===0?-1:1);
+        n.avoidVillainTarget={
+          x:THREE.MathUtils.clamp(n.x+directionX*2.0,CAR.xMin+0.35,CAR.xMax-0.35),
+          z:THREE.MathUtils.clamp(n.z+(n.z>=nearest.z?0.38:-0.38),CAR.aisleZMin+0.18,CAR.aisleZMax-0.18)
+        };
+        n.avoidVillainTimer=0.9;
+        n.fleeingVillain=true;
+        n.idleTarget=null;
+        n.targetSeat=null;
+        n.seatApproachPhase=null;
+      } else if((!nearest || nearestDistance>2.8) && n.avoidVillainTimer<=0){
+        n.avoidVillainTarget=null;
+        n.fleeingVillain=false;
+      }
     });
   }
 
@@ -343,7 +411,19 @@
       if (v.hitFlash>0){ v.hitFlash-=dt; }
       const flash = v.hitFlash>0 ? Math.sin(performance.now()*0.05)*0.15 : 0;
 
+      if(v.type==='broth' || v.type==='climate' || v.type==='umbrella'){
+        updateSpecialVillain(v,dt,px,pz);
+        v.x=THREE.MathUtils.clamp(v.x,CAR.xMin,CAR.xMax);
+        v.z=THREE.MathUtils.clamp(v.z,CAR.aisleZMin,CAR.aisleZMax);
+        v.mesh.position.set(v.x,0,v.z);
+        return;
+      }
+
       if (!v.hasApproachedPlayer && window.GameModules){
+        if(v.type==='drunk'){
+          v.approachOffsetX=Math.sin(performance.now()*0.007)*0.32;
+          v.mesh.rotation.z=Math.sin(performance.now()*0.009)*0.28;
+        }
         window.GameModules.MovementSystem.approachPlayer(v,player.position,dt,{
           speed:v.type==='drunk'?1.55:1.3,
           stopDistance:v.type==='drunk'?0.75:1.45,
@@ -417,6 +497,49 @@
     });
   }
 
+  function updateSpecialVillain(v,dt,px,pz){
+    if(v.type==='climate') return;
+    if(v.type==='umbrella'){
+      v.actionTimer+=dt;
+      if(v.state==='DRAIN'){
+        const targetX=THREE.MathUtils.clamp(v.x>0?3.2:-3.2,CAR.xMin,CAR.xMax);
+        moveNPCTo(v,targetX,0.55,dt);
+        if(v.actionTimer>=1.6){
+          v.state='WAIT'; v.actionTimer=0;
+          createSlipperyZone(v.x,v.z,'umbrella');
+          AudioFX.play('water');
+          showCenter('젖은 우산에서 물이 흘러 바닥이 미끄럽습니다!',true,1.6);
+        }
+      }
+      if(v.mesh.userData.umbrella) v.mesh.userData.umbrella.rotation.z=.25+Math.sin(performance.now()*.006)*.12;
+      return;
+    }
+
+    const targetZ=THREE.MathUtils.clamp(pz,CAR.aisleZMin+.08,CAR.aisleZMax-.08);
+    const d=Math.hypot(px-v.x,targetZ-v.z);
+    if(v.state==='APPROACH'){
+      window.GameModules.MovementSystem.moveTowards(v,{x:px,z:targetZ},dt,{speed:1.25,stopDistance:1.25,
+        bounds:{xMin:CAR.xMin,xMax:CAR.xMax,zMin:CAR.aisleZMin,zMax:CAR.aisleZMax}});
+      v.mesh.rotation.z=Math.sin(performance.now()*.008)*.18;
+      if(d<1.45){v.state='BROTH_TELEGRAPH';v.actionTimer=.8;AudioFX.play('brothWarn');}
+    } else if(v.state==='BROTH_TELEGRAPH'){
+      v.actionTimer-=dt;
+      if(v.mesh.userData.cup) v.mesh.userData.cup.rotation.z=THREE.MathUtils.lerp(0,1.15,1-v.actionTimer/.8);
+      if(v.actionTimer<=0){
+        createSlipperyZone(px,pz,'broth');
+        AudioFX.play('water');
+        if(G.posture===Posture.SEATED) damage(14);
+        else if(G.posture===Posture.HOLDING_HANDLE) damage(2);
+        v.state='BROTH_COOLDOWN';v.actionTimer=3.2;
+        showCenter('뜨거운 국물이 쏟아졌습니다!',true,1.2);
+      }
+    } else if(v.state==='BROTH_COOLDOWN'){
+      v.actionTimer-=dt;
+      if(v.mesh.userData.cup) v.mesh.userData.cup.rotation.z+=(0-v.mesh.userData.cup.rotation.z)*Math.min(1,dt*5);
+      if(v.actionTimer<=0) v.state='APPROACH';
+    } else if(v.state==='HIT' && v.timer>.3){ v.state='APPROACH';v.timer=0; }
+  }
+
   /* ============ 백팩 빌런: MOVE → TELEGRAPH → SWING → RECOVERY ============
      - MOVE: 통로를 이동. 플레이어를 완벽히 추적하지 않고 목표 지점을 주기적으로 다시 뽑음.
      - TELEGRAPH(0.7~1.0s): backpackPivot을 뒤로 당기며 예고. 이 상태에서 맞으면 공격이 취소됨(HIT 전환).
@@ -425,18 +548,25 @@
   ========================================================================== */
   function updateBackpackVillain(v, dt, px, pz){
     const bp = v.backpackPivot, bodyP = v.bodyPivot;
+    const attackZ=THREE.MathUtils.clamp(pz,CAR.aisleZMin+0.08,CAR.aisleZMax-0.08);
+    const attackDistance=Math.hypot(px-v.x,attackZ-v.z);
 
     if (v.state==='MOVE'){
       if (v.timer > v.moveRetargetAt){
         v.moveOffset = (Math.random()-0.5)*3.0;      // 플레이어를 정확히 추적하지 않도록 오프셋 부여
         v.moveRetargetAt = v.timer + 1.0 + Math.random()*1.2;
       }
-      const targetX = px + v.moveOffset;
-      const dx = targetX - v.x;
-      if (Math.abs(dx)>0.05) v.x += Math.sign(dx)*1.1*dt;
+      const dx=px-v.x, dz=attackZ-v.z;
+      const d=Math.hypot(dx,dz);
+      if(d>0.05){
+        const step=Math.min(d,1.35*dt);
+        v.x+=dx/d*step;
+        v.z+=dz/d*step;
+        v.mesh.rotation.y=Math.atan2(dx,dz);
+      }
       if (bodyP) bodyP.rotation.z += (0 - bodyP.rotation.z)*Math.min(1,dt*6);
       if (bp) bp.rotation.y += (0 - bp.rotation.y)*Math.min(1,dt*6);
-      if (Math.abs(px-v.x)<2.2 && v.timer>2){
+      if (attackDistance<0.75 && v.timer>0.35){
         v.state='TELEGRAPH';
         v.telegraphDuration = 0.7 + Math.random()*0.3;
         v.telegraph = v.telegraphDuration;
@@ -457,7 +587,7 @@
       if (bodyP) bodyP.rotation.z = THREE.MathUtils.lerp(-0.25, 0.15, t); // 상체는 살짝만 함께 회전
       if (!v.swingHit && t>=0.35 && t<=0.65){
         const d = Math.hypot(px-v.x, pz-v.z);
-        if (d<2.1){
+        if (d<2.4){
           v.swingHit = true; // 공격 판정은 이 프레임에 단 1회만
           if (G.posture===Posture.SEATED){
             damage(BALANCE.villainCollisionDamage*BALANCE.backpackSeatedDamageMultiplier);

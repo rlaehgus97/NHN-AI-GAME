@@ -6,9 +6,9 @@
     stageDuration: 75,
 
     // 탑승 단계
-    boardingApproachDuration: 0.6,   // 열차 도착 안내 후 문이 열리기까지
-    boardingEntryDuration: 1.0,      // NPC가 객차 중앙에 들어오는 시간
-    seatRushDuration: 3.2,
+    boardingApproachDuration: 0.8,   // 0~5초 탑승/HUD 구간 안에서 문 열림
+    boardingEntryDuration: 2.4,      // NPC와 플레이어 탑승
+    seatRushDuration: 1.8,           // 총 5초 후 자유 탐색 구간 진입
     seatSettleLeadTime: 0.45,        // 운행 시작 전 NPC 착석 정산을 먼저 보여주는 시간
     arrivalExitDuration: 5,
     disembarkRatio: 0.4,  // 목적지 도착 시 함께 하차하는 승객 비율

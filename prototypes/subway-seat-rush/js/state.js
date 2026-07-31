@@ -8,6 +8,8 @@
   let handles = [];           // HandlePoint objects
   let npcs = [];              // NPCPassenger (competitors)
   let villains = [];          // Villain objects
+  let hazardZones = [];       // 설치형 스트레스 존
+  let slipperyZones = [];     // 국물/우산이 만든 미끄러운 바닥
   let doorLeft, doorRight;    // 문 메시
   let exitMarker;             // 출구 표시
   const keys = {};            // 눌린 키 상태
@@ -16,7 +18,6 @@
 
   // 게임 진행 상태
   const G = {};
-  let nextMidStationFlow = 'boarding';
 
   // 범위 [min,max] 내 균등 난수
   function randRange(range){ return range[0] + Math.random()*(range[1]-range[0]); }
@@ -25,22 +26,24 @@
     G.state = GameState.READY;
     G.posture = Posture.STANDING;
     G.health = BALANCE.maxHealth;
+    G.stress = 0;
     G.honor = BALANCE.startHonor;
     G.timeLeft = BALANCE.stageDuration;
     G.stateTimer = 0;          // 현재 상태 경과
     G.stageElapsed = 0;        // TRAVELING 총 경과
     G.stationIndex = 0;
-    // 시작 시 NPC가 0명이 되는 분기는 사용하지 않는다.
-    // 대량 승차/하차 분기는 이후 스테이지 설정에서 명시적으로 선택한다.
-    G.initialCrowd = 'crowded';
-    // 첫 게임은 대량 승차를 보장하고, 재시작할 때마다 승차/하차를 교대로 테스트한다.
-    G.midStationFlow = nextMidStationFlow;
-    if(started){
-      nextMidStationFlow = nextMidStationFlow==='boarding' ? 'disembarking' : 'boarding';
-    }
+    G.initialCrowd = Math.random()<0.5 ? 'empty' : 'crowded';
+    G.midStationFlow = G.initialCrowd==='empty' ? 'boarding' : 'disembarking';
     G.intermediateDoorTimer = 0;
     G.pendingSuddenStop = 0;
     G.emptySeatFillTimer = 0;
+    G.crowdPressureTimer = 0;
+    G.crowdWarningActive = false;
+    G.crowdExposure = 0;
+    G.encircled = false;
+    G.crowdZoneMesh = null;
+    G.surgeTimer = 0;
+    G.doorBlocker = null;
     G.seatsSettled = false;
     G.seatsSettledAt = 0;
     G.doorsOpen = false;

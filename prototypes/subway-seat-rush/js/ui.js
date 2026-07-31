@@ -25,11 +25,11 @@
   const STATION_NAMES = ['출발','1번째 역','2번째 역','3번째 역','목적지'];
 
   function updateHUD(){
-    const hp = Math.round(G.health);
-    UI.healthFill.style.width = (G.health/BALANCE.maxHealth*100)+'%';
-    UI.healthNum.textContent = hp;
-    UI.healthWarn.textContent = (G.health<=25)? '위험! 체력이 부족합니다' : '';
-    if (G.health<=25){ UI.healthFill.style.filter='brightness(1.2) saturate(1.4)'; }
+    const stress = Math.round(G.stress||0);
+    UI.healthFill.style.width = (stress/BALANCE.maxHealth*100)+'%';
+    UI.healthNum.textContent = stress;
+    UI.healthWarn.textContent = (stress>=75)? '위험! 통근 스트레스가 높습니다' : '';
+    if (stress>=75){ UI.healthFill.style.filter='brightness(1.2) saturate(1.4)'; }
     else UI.healthFill.style.filter='none';
 
     const ho = Math.round(G.honor);
@@ -48,6 +48,7 @@
     let buffs=[];
     if (G.kindness.active) buffs.push('선행('+G.kindness.remaining.toFixed(0)+'s)');
     if (G.villainRewardBuff>0) buffs.push('의인('+G.villainRewardBuff.toFixed(0)+'s)');
+    if (G.encircled) buffs.push('포위 상태');
     UI.buffRow.textContent = buffs.length? '버프: '+buffs.join(' · ') : '';
 
     UI.bagCd.textContent = G.bagCooldown>0 ? ('가방: '+G.bagCooldown.toFixed(1)+'s') : '가방: 준비됨';

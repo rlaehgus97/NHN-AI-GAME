@@ -39,7 +39,8 @@
     else if (s===GameState.ARRIVAL){
       G.stationIndex = 4;
       document.body.classList.remove('train-moving');
-      openDoors();
+      if(!G.doorBlocker || G.doorBlocker.cleared) openDoors();
+      else closeDoors();
       exitMarker.material.opacity = 0.55;
       showCenter('목적지입니다. 문으로 이동하세요!', false, 2.2);
       G.arrivalTimeLeft = BALANCE.arrivalExitDuration;
@@ -68,11 +69,19 @@
     doorRight.position.x += (targetR - doorRight.position.x)*Math.min(1,dt*5);
   }
 
+  function advanceStageTimeline(dt){
+    G.stageElapsed+=dt;
+    G.timeLeft=Math.max(0,BALANCE.stageDuration-G.stageElapsed);
+    updateStageDirector(dt);
+    updatePendingStageEvents(dt);
+  }
+
   /* ============ Main state update ============ */
   function updateStates(dt){
     G.stateTimer += dt;
     switch(G.state){
       case GameState.BOARDING: {
+        advanceStageTimeline(dt);
         // 1) 문 닫힌 채 대기(도착 메시지) → 2) 문 열림 → 3) 탑승 진입 → 4) 좌석 경쟁 시작
         if (!G.doorsOpen && G.stateTimer >= BALANCE.boardingApproachDuration){
           openDoors();
@@ -80,8 +89,29 @@
         }
         if (G.doorsOpen){
           npcs.forEach(n=>{ if(n.kind==='competitor' && !n.seated){
-            moveNPCTo(n, n.boardTarget.x, n.boardTarget.z, dt);
+            if(n.boardingDelay>0){
+              n.boardingDelay=Math.max(0,n.boardingDelay-dt);
+            } else if(window.GameModules){
+              if(!n.boardingEntered){
+                const reachedDoorPath=window.GameModules.MovementSystem.moveTowards(n,n.boardTarget,dt,{
+                  speed:5.0, stopDistance:0.12,
+                  bounds:{xMin:-CAR.doorX+0.2,xMax:CAR.doorX-0.2,zMin:CAR.platformZ-2,zMax:CAR.aisleZMax}
+                });
+                n.boardingEntered=reachedDoorPath || n.z>CAR.farWallZ+0.08;
+              }
+              if(n.boardingEntered){
+                const entryTarget=n.entryTarget || {x:0,z:0};
+                const settled=window.GameModules.MovementSystem.moveTowards(n,entryTarget,dt,{
+                  speed:2.6,stopDistance:0.12,
+                  bounds:{xMin:CAR.xMin,xMax:CAR.xMax,zMin:CAR.aisleZMin,zMax:CAR.aisleZMax}
+                });
+                if(settled) n.initialSettling=false;
+              }
+            } else {
+              moveNPCTo(n,n.boardTarget.x,n.boardTarget.z,dt);
+            }
           }});
+          npcs.forEach(n=>{if(!n.seated) applySmoothNPCSeparation(n,dt,.82);});
         }
         if (G.doorsOpen && G.stateTimer >= BALANCE.boardingApproachDuration + BALANCE.boardingEntryDuration){
           enterState(GameState.SEAT_RUSH);
@@ -89,6 +119,7 @@
         break;
       }
       case GameState.SEAT_RUSH: {
+        advanceStageTimeline(dt);
         updateSeatRush(dt);
         const allOccupied = seats.every(s=>s.occupied);
         const settleAt=Math.max(0,BALANCE.seatRushDuration-BALANCE.seatSettleLeadTime);
@@ -105,18 +136,21 @@
         break;
       }
       case GameState.TRAVELING: {
-        G.timeLeft -= dt;
-        G.stageElapsed += dt;
-        updateStageDirector(dt);
-        updatePendingStageEvents(dt);
+        advanceStageTimeline(dt);
         updateVitals(dt);
         updateSeatReservations(dt);
         updateVillains(dt);
+        updateEnvironmentHazards(dt);
+        updateNPCAvoidVillains(dt);
         updateUnseatedCompetitors(dt); // 빈자리가 생기면(플레이어 기립, 빌런 퇴치 보상 만료 등) NPC가 알아서 채우러 옴
         ensureEmptySeatGetsFilled(dt);
-        updateNPCAvoidVillains(dt);
         if (npcs.some(n=>n.disembarking)) updateNPCDisembark(dt);
+        if(G.doorsOpen && G.stationIndex>0 && G.stationIndex<4 &&
+          Math.abs(player.position.x)<CAR.doorX+0.2 && player.position.z<CAR.farWallZ-0.15){
+          endGame(false,'목적지가 아닌 역에서 잘못 하차했습니다.');
+        }
         updateInteractPrompt();
+        updateSpecialInteractions(dt);
         updateSeatCaptureGauge(dt); // 이동 중에도 빈자리(양보받은 자리 등)는 SPACE 연타로만 앉을 수 있음
         break;
       }
@@ -128,9 +162,11 @@
         updateStageDirector(dt);
         G.arrivalTimeLeft -= dt;
         updateVillains(dt); // 빌런 잔여 이동만
+        updateEnvironmentHazards(dt);
         updateNPCWander(dt);
         updateNPCDisembark(dt); // 함께 하차하는 승객들을 문 쪽으로 이동/제거
         updateInteractPrompt();
+        updateSpecialInteractions(dt);
         // 출구 도달 판정: 문 밖(z <= farWall-1.0) & 문 x 범위
         const px=player.position.x, pz=player.position.z;
         if (Math.abs(px)<CAR.doorX+0.3 && pz < CAR.farWallZ + 0.4){
@@ -152,22 +188,31 @@
       if (action.type==='EVENT_SLOT'){
         if (action.eventId==='sudden-stop'){
           triggerSuddenStopWarn();
-          G.pendingSuddenStop = 2;
+          G.pendingSuddenStop = 3; // 12초 예고 → 15초 결과
         } else {
           spawnVillain(action.eventId);
         }
       } else if (action.type==='STATION_WARNING'){
-        showCenter('중간역에 곧 도착합니다. 출입문 주변을 확인하세요!', true, 2.2);
+        showCenter(G.midStationFlow==='disembarking'
+          ? '대량 하차 예고! 좌석·손잡이로 고정하거나 문 반대편으로 이동하세요.'
+          : '대량 승차 예고! 문 주변을 벗어나 중앙 빈 공간을 선점하세요.', true, 2.6);
         AudioFX.play('warning');
+        exitMarker.material.opacity=.3;
+        if(G.midStationFlow==='boarding'){
+          G.crowdWarningActive=true;
+          showCrowdWarningZone();
+        }
         if(G.midStationFlow==='disembarking') prepareMassDisembark();
       } else if (action.type==='INTERMEDIATE_ARRIVAL'){
         handleIntermediateArrival(action.stationIndex);
       } else if (action.type==='DESTINATION_WARNING'){
         showCenter('곧 목적지입니다. 하차 준비를 하세요!', true, 2.2);
         AudioFX.play('warning');
+        exitMarker.material.opacity=.4;
+        spawnDoorBlocker();
       } else if (action.type==='EXIT_QUEUE'){
         showCenter('승객들이 하차문으로 이동합니다!', false, 1.8);
-        npcs.forEach(n=>{ if(!n.seated){ n.wanderTX=0; n.wanderTZ=CAR.aisleZMin; } });
+        prepareDestinationExitQueue();
       } else if (action.type==='DESTINATION_ARRIVAL'){
         enterState(GameState.ARRIVAL);
       } else if (action.type==='DOORS_CLOSE'){
@@ -186,31 +231,45 @@
     }
     if (G.intermediateDoorTimer>0){
       G.intermediateDoorTimer-=dt;
-      if (G.intermediateDoorTimer<=0) closeDoors();
+      if (G.intermediateDoorTimer<=0){ closeDoors(); exitMarker.material.opacity=0; }
     }
   }
 
   function handleIntermediateArrival(stationIndex){
+    clearSlipperyZones();
     window.GameModules.StationSystem.resetStationScope({
-      G, seats, villains, scene
+      G, seats, villains, npcs, scene
     }, stationIndex);
     openDoors();
     G.intermediateDoorTimer = 2.5;
 
     if (G.midStationFlow==='boarding'){
-      const boardingCount = 4 + Math.floor(Math.random()*3);
+      const boardingCount = 10;
       const lanes=[-1.1,-0.37,0.37,1.1];
+      const crowdSpots=[
+        {x:-4.5,z:-.48},{x:-2.2,z:.48},{x:0,z:-.48},{x:2.2,z:.48},{x:4.5,z:-.48}
+      ];
       for(let i=0;i<boardingCount;i++){
         const x=lanes[i%lanes.length];
         const row=Math.floor(i/lanes.length);
-        const n=spawnNPC('competitor',x,CAR.platformZ-0.25-row*0.8);
-        n.boardTarget={x,z:0};
+        const n=spawnNPC('competitor',x,CAR.platformZ+0.45-row*0.72);
+        n.boardTarget={x,z:CAR.farWallZ+0.25};
         n.boardingAtStation=true;
-        n.boardingDelay=i*0.22;
+        n.boardingDelay=i*0.1;
+        if(i<5){
+          n.crowdBlocker=true;
+          n.avoidSeatTimer=999;
+          n.idleTarget={...crowdSpots[i]};
+        }
       }
       showCenter('중간역 대량 승차! '+boardingCount+'명이 탑승합니다.', true, 2.2);
+      G.crowdPressureTimer=15;
+      G.crowdExposure=(G.posture===Posture.STANDING && Math.abs(player.position.x)<2.8 && player.position.z<.05)?0.65:0;
+      G.encircled=G.crowdExposure>=.65;
+      G.crowdWarningActive=false;
     } else {
-      showCenter('중간역 대량 하차! 승객 이동에 휩쓸리지 마세요!', true, 2.2);
+      showCenter('대량 하차 서지! 서 있으면 출입문 방향으로 밀려납니다.', true, 2.2);
+      G.surgeTimer=2.5;
     }
   }
 
@@ -223,8 +282,14 @@
     showCenter('하차 승객들이 문 앞에 미리 줄을 섭니다.',false,1.8);
   }
 
+  function prepareDestinationExitQueue(){
+    npcs.forEach(n=>{
+      if(!n.isYielder && !n.disembarking) beginNPCDisembark(n);
+    });
+  }
+
   function judgeArrival(){
-    if (G.health<=0){ endGame(false,'체력이 모두 소진되었습니다.'); return; }
+    if (G.stress>=BALANCE.maxHealth){ endGame(false,'통근 스트레스가 100에 도달했습니다.'); return; }
     if (G.honor<=0){ endGame(false,'명예가 바닥나 하차에 실패했습니다.'); return; }
     endGame(true, '무사히 목적지에 하차했습니다!');
   }
@@ -239,7 +304,7 @@
     document.getElementById('resultTitle').textContent = success? '🎉 생존 성공!' : '💀 GAME OVER';
     document.getElementById('resultReason').textContent = reason;
     document.getElementById('resultStats').innerHTML =
-      '<div class="resultStat">남은 체력: <b>'+Math.round(G.health)+'</b></div>'+
+      '<div class="resultStat">통근 스트레스: <b>'+Math.round(G.stress)+'</b></div>'+
       '<div class="resultStat">명예: <b>'+Math.round(G.honor)+'</b> ('+honorGrade(G.honor)+')</div>'+
       '<div class="resultStat">빌런 퇴치: <b>'+G.villainsDefeated+'</b>회</div>'+
       '<div class="resultStat">선행: <b>'+G.goodDeeds+'</b>회</div>';
@@ -251,8 +316,9 @@
 
   /* ============ Reset and restart ============ */
   function clearDynamicObjects(){
+    clearEnvironmentHazards();
     npcs.forEach(n=> scene.remove(n.mesh)); npcs=[];
-    villains.forEach(v=> scene.remove(v.mesh)); villains=[];
+    villains.forEach(v=>{ scene.remove(v.mesh); if(v.zoneMesh) scene.remove(v.zoneMesh); }); villains=[];
     seats.forEach(s=>{
       s.occupied=false; s.occupant=null;
       s.captureProgress=0; s.npcProgress=0; s.npcClaimantRef=null;
@@ -271,9 +337,9 @@
     document.getElementById('startScreen').classList.add('hidden');
     document.getElementById('resultOverlay').classList.add('hidden');
     document.getElementById('eventOverlay').classList.add('hidden');
+    clearDynamicObjects();
     // 상태 초기화
     resetGameData();
-    clearDynamicObjects();
     resetCenterMessages();
     // 키 입력 초기화
     for (const k in keys) keys[k]=false;
@@ -286,6 +352,8 @@
     if (player.userData.handPivot) player.userData.handPivot.rotation.z = 0;
     // 승객 재생성 (승강장에서 대기)
     spawnPassengers();
+    ensurePlayerSafetyResources();
+    spawnStaticStressZone();
     G.timeLeft = BALANCE.stageDuration;
     enterState(GameState.BOARDING);
   }
@@ -313,7 +381,7 @@
     // READY(시작 화면) 상태에서는 플레이어/NPC/타이머/이벤트가 절대 진행되지 않음
     if (G.state!==GameState.READY && G.state!==GameState.CLEAR && G.state!==GameState.GAME_OVER){
       updatePlayer(dt);
-      resolveNPCPush();
+      resolveNPCPush(dt);
       updateStates(dt);
     }
     updateDoors(dt);

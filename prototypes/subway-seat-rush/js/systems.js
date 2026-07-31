@@ -4,11 +4,15 @@
   /* ============ Health and honor systems ============ */
   function damage(amount){
     G.health = Math.max(0, G.health - amount);
-    if (G.health <= 0 && G.state === GameState.TRAVELING){
-      endGame(false, '체력이 모두 소진되었습니다.');
+    G.stress = BALANCE.maxHealth-G.health;
+    if (G.health <= 0 && (G.state === GameState.TRAVELING || G.state === GameState.ARRIVAL)){
+      endGame(false, '통근 스트레스가 100에 도달했습니다.');
     }
   }
-  function heal(amount){ G.health = Math.min(BALANCE.maxHealth, G.health + amount); }
+  function heal(amount){
+    G.health = Math.min(BALANCE.maxHealth, G.health + amount);
+    G.stress = BALANCE.maxHealth-G.health;
+  }
   function addHonor(amount){ G.honor = Math.max(0, Math.min(BALANCE.maxHonor, G.honor + amount)); }
   function honorGrade(h){
     if (h>=70) return '의인';
@@ -75,11 +79,21 @@
   // 예약된 좌석의 남은 시간을 갱신하고, 시간이 지나면 예약 해제(다른 NPC도 다시 앉을 수 있게 됨)
   function updateSeatReservations(dt){
     seats.forEach(s=>{
+      if(s.reservedFor==='player-safety') return;
       if (s.reservedFor && !s.occupied){
         s.reservedTimer -= dt;
         if (s.reservedTimer<=0){ s.reservedFor=null; s.reservedTimer=0; }
       }
     });
+  }
+
+  function ensurePlayerSafetyResources(){
+    const safetySeat=seats.find(s=>!s.occupied) || seats[0];
+    if(safetySeat){
+      safetySeat.reservedFor='player-safety';
+      safetySeat.reservedTimer=BALANCE.stageDuration+10;
+    }
+    handles.forEach((handle,index)=>{ handle.playerSafety=index<2; });
   }
 
   /* ============ Event manager (자리 양보 / 급정거) ============
@@ -148,6 +162,15 @@
     }
     // NPC/빌런 흔들림
     villains.forEach(v=>{ if(!v.defeated){ v.z += 0.3; } });
+    if(slipperyZones.some(zone=>playerInZone(zone)) && G.posture===Posture.STANDING){
+      damage(7);
+      G.stun=Math.max(G.stun,0.65);
+      G.knockback.timer=BALANCE.knockbackDuration;
+      G.knockback.distance=1.4;
+      G.knockback.dirX=(Math.random()<.5?-1:1);
+      G.knockback.dirZ=.35;
+      showCenter('미끄러운 바닥에서 중심을 잃었습니다!',true,1.4);
+    }
   }
 
   /* ============ Stage timer and station manager ============ */

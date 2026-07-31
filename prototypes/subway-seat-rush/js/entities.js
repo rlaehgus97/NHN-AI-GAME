@@ -21,15 +21,19 @@
     const npc = {
       mesh, kind, targetSeat:null, seated:false, seatRef:null,
       x, z, standSpot:{x,z},
-      boardTarget: { x, z: 0 },   // 탑승 단계에서 걸어 들어갈 목표(차량 통로 중앙)
-      boardingAtStation:false, boardingDelay:0,
+      boardTarget: { x, z: CAR.farWallZ+0.25 }, // 문턱을 넘으면 바로 객차 안쪽으로 분산
+      boardingAtStation:false, boardingDelay:0, boardingEntered:false,
+      entryTarget:null, initialSettling:false,
       isYielder:false, wobble:Math.random()*6,
       wanderTX:x, wanderTZ:z, wanderTimer:Math.random()*2, wanderSpeed:1.3+Math.random()*0.9,
       moveSpeed, captureRate,
       thankTag:null, thankTagTimer:0,
       standingIndex:npcs.length,
+      idleTarget:null,
+      seatApproachPhase:null,
       avoidSeatTimer:0, fleeingVillain:false,
-      disembarking:false, disembarkPhase:null, exitTargetX:0
+      avoidVillainTarget:null, avoidVillainTimer:0,
+      disembarking:false, disembarkPhase:null, exitTargetX:0, exitQueueZ:CAR.farWallZ+0.65
     };
     npcs.push(npc);
     return npc;
@@ -38,12 +42,23 @@
   function spawnPassengers() {
     // 좌석 경쟁 NPC: 승강장에 플레이어와 함께 대기 (문이 열려야 탑승 가능)
     // low/empty 분기가 다시 사용되더라도 시작 승객이 완전히 사라지지 않도록 최소 4명을 둔다.
-    const count = G.initialCrowd==='empty' ? 4 : BALANCE.competitorCount;
+    const count = G.initialCrowd==='empty' ? 0 : BALANCE.competitorCount;
+    const doorLanes=[-1.1,-0.37,0.37,1.1];
     for (let i=0;i<count;i++){
-      const t = count>1 ? i/(count-1) : 0.5;
-      const x = CAR.xMin + 0.6 + t*(CAR.xMax - CAR.xMin - 1.2);
-      const z = CAR.platformZ + (Math.random()*0.6 - 0.3);
-      spawnNPC('competitor', x, z);
+      const x=doorLanes[i%doorLanes.length];
+      const row=Math.floor(i/doorLanes.length);
+      const z=CAR.platformZ+0.6-row*0.75;
+      const n=spawnNPC('competitor',x,z);
+      n.boardTarget={x,z:CAR.farWallZ+0.75};
+      n.boardingDelay=i*0.13;
+      const side=i%2===0?-1:1;
+      const rank=Math.floor(i/2);
+      const staggerZ=[-.68,.08,.68][rank%3];
+      n.entryTarget={
+        x:THREE.MathUtils.clamp(side*(1+rank*.92),CAR.xMin+.45,CAR.xMax-.45),
+        z:staggerZ
+      };
+      n.initialSettling=true;
     }
     // 배경(ambient) 승객은 좌석 경쟁을 방해하므로 초기 탑승 단계에서는 생성하지 않음.
   }
@@ -55,19 +70,35 @@
       g.add(makeTag('취객','#c0392b'));
       return g;
     }
+    if(type==='broth'){
+      const g=makeCharacter(0xd35400,0xe8c39e);
+      const cup=new THREE.Mesh(new THREE.CylinderGeometry(.14,.11,.35,10),matClay(0xffc65c));
+      cup.position.set(.48,.82,0); g.add(cup); g.userData.cup=cup;
+      g.add(makeTag('어묵 국물','#d35400')); return g;
+    }
+    if(type==='climate'){
+      const g=makeCharacter(0x2980b9,0xe8c39e);
+      g.add(makeTag('냉방 조작','#2980b9')); return g;
+    }
+    if(type==='umbrella'){
+      const g=makeCharacter(0x2471a3,0xe8c39e);
+      const umbrella=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,1.45,8),matClay(0x34495e));
+      umbrella.position.set(.5,.65,0); umbrella.rotation.z=.25; g.add(umbrella);
+      g.userData.umbrella=umbrella; g.add(makeTag('젖은 우산','#2471a3')); return g;
+    }
     // 백팩 빌런: villainRoot > bodyPivot / backpackPivot 계층 구조 (scene.js)
     return makeBackpackVillain();
   }
 
   function spawnVillain(type){
     const mesh = makeVillainMesh(type);
-    const x = (Math.random()<0.5? -6.5 : 6.5);
+    const x = type==='climate' ? (Math.random()<.5?-4.5:4.5) : (Math.random()<0.5? -6.5 : 6.5);
     mesh.position.set(x, 0, 0.2);
     scene.add(mesh);
     const v = {
       type, mesh, x, z:0.2,
       hp: 1,
-      state: (type==='drunk'?'WANDER':'MOVE'),
+      state: (type==='drunk'?'WANDER':type==='broth'?'APPROACH':type==='umbrella'?'DRAIN':'MOVE'),
       timer: 0, dirX:(Math.random()<0.5?-1:1), dirZ:(Math.random()<0.5?-1:1),
       hitFlash:0, hitStop:0, defeated:false,
       dmgCooldown:0,
@@ -79,12 +110,19 @@
       backpackPivot: mesh.userData.backpackPivot || null,
       hasApproachedPlayer:false,
       approachOffsetX:(Math.random()-0.5)*0.8,
-      approachOffsetZ:0
+      approachOffsetZ:0,
+      zoneRadius:2.0, zoneMesh:null, neglectTimer:0, relocatedNPC:false,
+      interactProgress:0, actionTimer:0, spillDone:false
     };
+    if(type==='climate'){
+      v.zoneMesh=makeHazardDisc(x,0.2,v.zoneRadius,0x66d9ff,.2);
+      v.hasApproachedPlayer=true;
+    }
     villains.push(v);
-    AudioFX.play(type==='drunk' ? 'villain' : 'backpack');
+    AudioFX.play(type==='drunk'?'villain':type==='backpack'?'backpack':type);
     VisualFX.flash('danger');
     VisualFX.burst(x,1,0.2,type==='drunk'?0xe74c3c:0x9b59b6,16);
-    showCenter(type==='drunk'? '⚠ 만취 비틀이 등장!' : '⚠ 백팩 회전맨 등장!', true, 1.6);
+    const names={drunk:'만취 비틀이',backpack:'백팩 회전맨이',broth:'어묵 국물 승객이',climate:'냉방 조작 승객이',umbrella:'젖은 우산 승객이'};
+    showCenter('⚠ '+names[type]+' 등장!', true, 1.6);
     return v;
   }
