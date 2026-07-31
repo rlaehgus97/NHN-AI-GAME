@@ -15,6 +15,8 @@
       showCenter('지하철이 도착했습니다. 탑승하세요!', false, 1.6);
     }
     else if (s===GameState.SEAT_RUSH){
+      G.seatsSettled=false;
+      G.seatsSettledAt=0;
       showCenter('좌석 경쟁! 빈자리로!', false, 1.4);
     }
     else if (s===GameState.TRAVELING){
@@ -32,9 +34,10 @@
           n.mesh.position.set(n.x, 0, n.z);
         }
       });
-      showCenter('출발합니다. 45초간 생존!', false, 1.4);
+      showCenter('출발합니다. 목적지 안내까지 버티세요!', false, 1.4);
     }
     else if (s===GameState.ARRIVAL){
+      G.stationIndex = 4;
       document.body.classList.remove('train-moving');
       openDoors();
       exitMarker.material.opacity = 0.55;
@@ -48,13 +51,7 @@
       npcs.forEach(n=>{
         if (n.isYielder) return;
         if (Math.random() < BALANCE.disembarkRatio){
-          n.disembarking = true;
-          n.exitTargetX = THREE.MathUtils.clamp(n.x, -CAR.doorX+0.4, CAR.doorX-0.4);
-          if (n.seated){
-            if (n.seatRef){ n.seatRef.occupied=false; n.seatRef.occupant=null; }
-            n.seated=false; n.seatRef=null;
-            n.mesh.scale.set(1,1,1);
-          }
+          beginNPCDisembark(n);
         }
       });
     }
@@ -94,8 +91,15 @@
       case GameState.SEAT_RUSH: {
         updateSeatRush(dt);
         const allOccupied = seats.every(s=>s.occupied);
-        if (G.stateTimer >= BALANCE.seatRushDuration || allOccupied){
-          settleRemainingSeats(); // 아직 못 앉은 NPC를 남은 좌석에 강제 배정 → 좌석은 항상 꽉 차게 됨
+        const settleAt=Math.max(0,BALANCE.seatRushDuration-BALANCE.seatSettleLeadTime);
+        if(!G.seatsSettled && (G.stateTimer>=settleAt || allOccupied)){
+          settleRemainingSeats();
+          G.seatsSettled=true;
+          G.seatsSettledAt=G.stateTimer;
+        }
+        const settleVisible=G.seatsSettled &&
+          G.stateTimer-G.seatsSettledAt>=BALANCE.seatSettleLeadTime;
+        if (G.stateTimer >= BALANCE.seatRushDuration || (allOccupied && settleVisible)){
           enterState(GameState.TRAVELING);
         }
         break;
@@ -103,15 +107,17 @@
       case GameState.TRAVELING: {
         G.timeLeft -= dt;
         G.stageElapsed += dt;
-        updateStationProgress();
-        updateScriptedEvents(dt);
+        updateStageDirector(dt);
+        updatePendingStageEvents(dt);
         updateVitals(dt);
         updateSeatReservations(dt);
         updateVillains(dt);
         updateUnseatedCompetitors(dt); // 빈자리가 생기면(플레이어 기립, 빌런 퇴치 보상 만료 등) NPC가 알아서 채우러 옴
+        ensureEmptySeatGetsFilled(dt);
+        updateNPCAvoidVillains(dt);
+        if (npcs.some(n=>n.disembarking)) updateNPCDisembark(dt);
         updateInteractPrompt();
         updateSeatCaptureGauge(dt); // 이동 중에도 빈자리(양보받은 자리 등)는 SPACE 연타로만 앉을 수 있음
-        if (G.timeLeft<=0){ enterState(GameState.ARRIVAL); }
         break;
       }
       case GameState.EVENT: {
@@ -119,6 +125,7 @@
         break;
       }
       case GameState.ARRIVAL: {
+        updateStageDirector(dt);
         G.arrivalTimeLeft -= dt;
         updateVillains(dt); // 빌런 잔여 이동만
         updateNPCWander(dt);
@@ -136,6 +143,84 @@
         break;
       }
     }
+  }
+
+  function updateStageDirector(dt){
+    if (!window.GameModules) return;
+    const actions = window.GameModules.director.update(dt);
+    actions.forEach(action=>{
+      if (action.type==='EVENT_SLOT'){
+        if (action.eventId==='sudden-stop'){
+          triggerSuddenStopWarn();
+          G.pendingSuddenStop = 2;
+        } else {
+          spawnVillain(action.eventId);
+        }
+      } else if (action.type==='STATION_WARNING'){
+        showCenter('중간역에 곧 도착합니다. 출입문 주변을 확인하세요!', true, 2.2);
+        AudioFX.play('warning');
+        if(G.midStationFlow==='disembarking') prepareMassDisembark();
+      } else if (action.type==='INTERMEDIATE_ARRIVAL'){
+        handleIntermediateArrival(action.stationIndex);
+      } else if (action.type==='DESTINATION_WARNING'){
+        showCenter('곧 목적지입니다. 하차 준비를 하세요!', true, 2.2);
+        AudioFX.play('warning');
+      } else if (action.type==='EXIT_QUEUE'){
+        showCenter('승객들이 하차문으로 이동합니다!', false, 1.8);
+        npcs.forEach(n=>{ if(!n.seated){ n.wanderTX=0; n.wanderTZ=CAR.aisleZMin; } });
+      } else if (action.type==='DESTINATION_ARRIVAL'){
+        enterState(GameState.ARRIVAL);
+      } else if (action.type==='DOORS_CLOSE'){
+        closeDoors();
+        if (G.state===GameState.ARRIVAL){
+          endGame(false,'문이 닫힐 때까지 하차하지 못했습니다.');
+        }
+      }
+    });
+  }
+
+  function updatePendingStageEvents(dt){
+    if (G.pendingSuddenStop>0){
+      G.pendingSuddenStop-=dt;
+      if (G.pendingSuddenStop<=0) doSuddenStop();
+    }
+    if (G.intermediateDoorTimer>0){
+      G.intermediateDoorTimer-=dt;
+      if (G.intermediateDoorTimer<=0) closeDoors();
+    }
+  }
+
+  function handleIntermediateArrival(stationIndex){
+    window.GameModules.StationSystem.resetStationScope({
+      G, seats, villains, scene
+    }, stationIndex);
+    openDoors();
+    G.intermediateDoorTimer = 2.5;
+
+    if (G.midStationFlow==='boarding'){
+      const boardingCount = 4 + Math.floor(Math.random()*3);
+      const lanes=[-1.1,-0.37,0.37,1.1];
+      for(let i=0;i<boardingCount;i++){
+        const x=lanes[i%lanes.length];
+        const row=Math.floor(i/lanes.length);
+        const n=spawnNPC('competitor',x,CAR.platformZ-0.25-row*0.8);
+        n.boardTarget={x,z:0};
+        n.boardingAtStation=true;
+        n.boardingDelay=i*0.22;
+      }
+      showCenter('중간역 대량 승차! '+boardingCount+'명이 탑승합니다.', true, 2.2);
+    } else {
+      showCenter('중간역 대량 하차! 승객 이동에 휩쓸리지 마세요!', true, 2.2);
+    }
+  }
+
+  function prepareMassDisembark(){
+    const eligible=npcs.filter(n=>!n.isYielder && !n.disembarking);
+    const targetCount=Math.max(3,Math.round(eligible.length*0.45));
+    for(let i=0;i<Math.min(targetCount,eligible.length);i++){
+      beginNPCDisembark(eligible[i]);
+    }
+    showCenter('하차 승객들이 문 앞에 미리 줄을 섭니다.',false,1.8);
   }
 
   function judgeArrival(){
@@ -263,8 +348,9 @@
       // 경쟁자 없이 게이지만 채우면 되지만 동일하게 SPACE 입력이 필요하다.
       const seat = nearestEmptySeat(player.position.x, player.position.z, 1.3);
       if (seat && G.posture===Posture.STANDING && G.risingTimer<=0 && !seat.occupied){
-        seat.captureProgress = Math.min(100, seat.captureProgress + BALANCE.seatCaptureGainPerPress);
-        if (seat.captureProgress>=100){
+        if (window.GameModules.SeatCompetition.playerPress(
+          seat, BALANCE.seatCaptureGainPerPress
+        )){
           sitOnSeat(seat, '자리 차지 성공!');
         }
       }

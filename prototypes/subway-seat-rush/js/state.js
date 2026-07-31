@@ -16,6 +16,7 @@
 
   // 게임 진행 상태
   const G = {};
+  let nextMidStationFlow = 'boarding';
 
   // 범위 [min,max] 내 균등 난수
   function randRange(range){ return range[0] + Math.random()*(range[1]-range[0]); }
@@ -29,6 +30,19 @@
     G.stateTimer = 0;          // 현재 상태 경과
     G.stageElapsed = 0;        // TRAVELING 총 경과
     G.stationIndex = 0;
+    // 시작 시 NPC가 0명이 되는 분기는 사용하지 않는다.
+    // 대량 승차/하차 분기는 이후 스테이지 설정에서 명시적으로 선택한다.
+    G.initialCrowd = 'crowded';
+    // 첫 게임은 대량 승차를 보장하고, 재시작할 때마다 승차/하차를 교대로 테스트한다.
+    G.midStationFlow = nextMidStationFlow;
+    if(started){
+      nextMidStationFlow = nextMidStationFlow==='boarding' ? 'disembarking' : 'boarding';
+    }
+    G.intermediateDoorTimer = 0;
+    G.pendingSuddenStop = 0;
+    G.emptySeatFillTimer = 0;
+    G.seatsSettled = false;
+    G.seatsSettledAt = 0;
     G.doorsOpen = false;
     G.occupiedSeat = null;
     G.heldHandle = null;
@@ -63,4 +77,5 @@
       backpackAt: randRange(BALANCE.backpackSpawnRange),
       suddenStopWarnAt: randRange(BALANCE.suddenStopRange)
     };
+    if (window.GameModules) window.GameModules.director.reset();
   }

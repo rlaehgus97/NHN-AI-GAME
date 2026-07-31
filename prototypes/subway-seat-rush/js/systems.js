@@ -49,6 +49,8 @@
     // NPC가 플레이어를 바라보며 감사 태그 표시
     npc.mesh.scale.set(1,1,1);
     npc.mesh.position.set(candidateSeat.x, 0, candidateSeat.z);
+    npc.x=candidateSeat.x;
+    npc.z=candidateSeat.z;
     const dx=player.position.x-candidateSeat.x, dz=player.position.z-candidateSeat.z;
     npc.mesh.rotation.y = Math.atan2(dx,dz);
     if (npc.thankTag){ npc.mesh.remove(npc.thankTag); }
@@ -111,7 +113,7 @@
       const s = G.occupiedSeat;
       standUpFromSeat();
       if (s && yn){ s.occupied=true; s.occupant=yn; yn.seated=true; yn.seatRef=s;
-        placeCharacterOnSeat(yn.mesh, s); }
+        placeCharacterOnSeat(yn.mesh, s); yn.x=yn.mesh.position.x; yn.z=yn.mesh.position.z; }
       showCenter('자리를 양보했습니다. 명예 +'+BALANCE.yieldSeatHonorReward, false, 1.8);
       // 선행에 대한 보답: 앉아있던 다른 승객 중 1명이 무조건 감동해서 자리를 양보함
       attemptSeatReward('당신의 선행을 지켜본 승객이 있습니다!');

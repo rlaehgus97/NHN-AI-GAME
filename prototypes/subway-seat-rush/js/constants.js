@@ -3,13 +3,14 @@
 
   /* ============ Game constants and balance ============ */
   const BALANCE = {
-    stageDuration: 45,
+    stageDuration: 75,
 
     // 탑승 단계
-    boardingApproachDuration: 1.0,   // 문 닫힌 채 "도착했습니다" 대기 시간
-    boardingEntryDuration: 1.8,      // 문이 열린 뒤 탑승/진입 시간 (이후 좌석 경쟁 시작)
-    seatRushDuration: 9,
-    arrivalExitDuration: 8,
+    boardingApproachDuration: 0.6,   // 열차 도착 안내 후 문이 열리기까지
+    boardingEntryDuration: 1.0,      // NPC가 객차 중앙에 들어오는 시간
+    seatRushDuration: 3.2,
+    seatSettleLeadTime: 0.45,        // 운행 시작 전 NPC 착석 정산을 먼저 보여주는 시간
+    arrivalExitDuration: 5,
     disembarkRatio: 0.4,  // 목적지 도착 시 함께 하차하는 승객 비율
 
     maxHealth: 100,

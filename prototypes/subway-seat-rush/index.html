@@ -38,7 +38,7 @@
 
   <div id="hudBottom" class="hud">
     <div id="interactPrompt">&nbsp;</div>
-    <div id="controlsHint">WASD 이동 · SHIFT 대시 · F/클릭 가방 · E 상호작용 · SPACE 착석경쟁</div>
+    <div id="controlsHint">WASD 이동 · SHIFT 대시 · F/클릭 가방 · E 상호작용 · SPACE 빈자리 착석</div>
   </div>
 
   <div id="centerMsg" class="hud"><span></span></div>
@@ -46,7 +46,7 @@
   <button id="soundToggle" type="button" aria-label="소리 끄기" title="소리 켜기/끄기">🔊</button>
 
   <div id="seatGaugeWrap" class="hud">
-    <div id="seatGaugeLabel">자리 차지! SPACE 연타</div>
+    <div id="seatGaugeLabel">빈자리 착석: SPACE</div>
     <div id="seatGauge"><div id="seatGaugeFill"></div></div>
   </div>
 
@@ -54,12 +54,12 @@
   <div id="startScreen" class="overlay">
     <div class="panel">
       <h1>🚇 지옥철 생존기</h1>
-      <p>퇴근길 지옥철. <b>45초</b>를 버텨 목적지에서 하차하라.</p>
+      <p>퇴근길 지옥철. 역별 이벤트를 버텨 목적지에서 직접 하차하라.</p>
       <p>체력을 지키고, 명예를 잃지 말 것.</p>
       <div class="ctrlList">
         <div><b>WASD</b> 이동</div>
         <div><b>SHIFT</b> 대시</div>
-        <div><b>SPACE</b> 좌석 경쟁 연타</div>
+        <div><b>SPACE</b> 빈자리 착석</div>
         <div><b>E</b> 손잡이 / 좌석 / 출구</div>
         <div><b>F / 좌클릭</b> 가방 휘두르기</div>
         <div><b>1 / 2</b> 이벤트 선택</div>
@@ -93,6 +93,7 @@
 
   <!-- Three.js (UMD 전역 빌드 — file:// 에서도 바로 실행 가능) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script type="module" src="js/modules/runtime.js"></script>
 
   <!-- 게임 스크립트: 의존 관계상 아래 순서로 로드 -->
   <script src="js/constants.js"></script>

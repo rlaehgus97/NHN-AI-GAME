@@ -16,17 +16,15 @@
       const contested = seat.npcClaimantRef && !seat.npcClaimantRef.seated;
       if (UI.seatLabel){
         if (seat.reservedFor==='player'){
-          UI.seatLabel.textContent = '양보받은 자리! SPACE 연타 ('+Math.ceil(seat.reservedTimer)+'s)';
+          UI.seatLabel.textContent = '양보받은 자리! SPACE ('+Math.ceil(seat.reservedTimer)+'s)';
         } else if (contested){
-          UI.seatLabel.textContent = '경쟁 승객과 자리 다툼 중! SPACE 연타';
+          UI.seatLabel.textContent = '경쟁 승객보다 먼저 SPACE!';
         } else {
-          UI.seatLabel.textContent = '자리 차지! SPACE 연타';
+          UI.seatLabel.textContent = '빈자리 착석: SPACE';
         }
       }
       UI.seatWrap.classList.add('show');
       UI.seatFill.style.width = seat.captureProgress+'%';
-      // 자연 감소 (연타를 멈추면 게이지가 줄어듦)
-      seat.captureProgress = Math.max(0, seat.captureProgress - BALANCE.seatCaptureDecayPerSecond*dt);
     } else {
       UI.seatWrap.classList.remove('show');
     }
@@ -44,28 +42,51 @@
       }
       if (n.kind!=='competitor' || n.seated || n.isYielder || n.disembarking) return;
 
-      if (!n.targetSeat || n.targetSeat.occupied || n.targetSeat.reservedFor){
+      // 중간역 신규 승객은 문을 통해 객차 중앙까지 들어온 뒤 좌석을 찾는다.
+      if(n.boardingAtStation){
+        if(n.boardingDelay>0){
+          n.boardingDelay=Math.max(0,n.boardingDelay-dt);
+          return;
+        }
+        const entered=moveNPCTo(n,n.boardTarget.x,n.boardTarget.z,dt);
+        if(entered){
+          n.boardingAtStation=false;
+          const slot=getStandingSlot(n);
+          n.wanderTX=slot.x;
+          n.wanderTZ=slot.z;
+          n.wanderTimer=0;
+        }
+        return;
+      }
+
+      if(n.avoidSeatTimer>0){
+        n.avoidSeatTimer=Math.max(0,n.avoidSeatTimer-dt);
+        n.targetSeat=null;
+      } else if (!n.targetSeat || n.targetSeat.occupied || n.targetSeat.reservedFor){
+        n.fleeingVillain=false;
         n.targetSeat = pickTargetSeatForNPC(n);
       }
-      const s = n.targetSeat;
+      const s = n.avoidSeatTimer>0 ? null : n.targetSeat;
 
       if (s){
-        // 목표 좌석이 있으면 그쪽으로 이동하며 점유를 시도 (플레이어와 겹치면 SPACE 연타 속도 대결이 됨)
+        // 단순화 규칙: 빈 좌석의 상호작용 지점에 먼저 도착한 대상이 즉시 차지한다.
         const arrived = moveNPCTo(n, s.interactionPoint.x, s.interactionPoint.z, dt);
         if (arrived && !s.occupied && !s.reservedFor){
-          if (s.npcClaimantRef !== n){ s.npcProgress = 0; s.npcClaimantRef = n; }
-          s.npcProgress += n.captureRate*dt;
-          if (s.npcProgress >= 100){ npcSit(n, s); }
+          npcSit(n, s);
         }
       } else {
-        // 갈 수 있는 좌석이 없으면 통로를 배회
+        // 갈 수 있는 좌석이 없으면 개체별 대기 슬롯 주변을 움직여 한곳에 뭉치지 않게 한다.
         n.wanderTimer -= dt;
+        const slot = getStandingSlot(n);
+        if (n.wanderTZ<CAR.aisleZMin || n.wanderTZ>CAR.aisleZMax){
+          n.wanderTX=slot.x; n.wanderTZ=slot.z; n.wanderTimer=0;
+        }
         const dx=n.wanderTX-n.x, dz=n.wanderTZ-n.z;
         const d=Math.hypot(dx,dz);
         if (d<0.25 || n.wanderTimer<=0){
-          n.wanderTX = CAR.xMin + Math.random()*(CAR.xMax-CAR.xMin);
-          n.wanderTZ = CAR.aisleZMin + Math.random()*(CAR.aisleZMax-CAR.aisleZMin);
-          n.wanderTimer = 1.5 + Math.random()*2.5;
+          n.wanderTX = THREE.MathUtils.clamp(slot.x+(Math.random()-0.5)*0.45,CAR.xMin,CAR.xMax);
+          n.wanderTZ = THREE.MathUtils.clamp(slot.z+(Math.random()-0.5)*0.25,CAR.aisleZMin,CAR.aisleZMax);
+          n.wanderTimer = 2.2 + Math.random()*2.5;
         } else {
           const spd = n.wanderSpeed || 1.5;
           n.x += dx/d*spd*dt; n.z += dz/d*spd*dt;
@@ -86,17 +107,51 @@
       });
     });
 
-    // 목표 좌석에서 벗어났거나 다른 NPC로 교체된 좌석의 npcProgress는 서서히 감소
-    seats.forEach(s=>{
-      if (s.occupied || !s.npcClaimantRef) return;
-      const c = s.npcClaimantRef;
-      const stillClaiming = !c.seated && c.targetSeat===s &&
-        dist2(c.x,c.z,s.interactionPoint.x,s.interactionPoint.z) < 1.5*1.5;
-      if (!stillClaiming){
-        s.npcProgress = Math.max(0, s.npcProgress - BALANCE.seatCaptureDecayPerSecond*dt);
-        if (s.npcProgress<=0) s.npcClaimantRef = null;
-      }
+    updateNPCSeatPoses();
+  }
+
+  // 상태 전환이나 군중 이동이 있어도 모든 착석 NPC를 동일한 기준점에 고정한다.
+  function updateNPCSeatPoses(){
+    npcs.forEach(n=>{
+      if(!n.seated || !n.seatRef) return;
+      placeCharacterOnSeat(n.mesh,n.seatRef);
+      n.x=n.mesh.position.x;
+      n.z=n.mesh.position.z;
     });
+  }
+
+  // 빈 좌석과 서 있는 경쟁자가 함께 있으면 1초 안에 가장 가까운 NPC가 좌석을 채우게 한다.
+  function ensureEmptySeatGetsFilled(dt){
+    const empty=seats.find(s=>!s.occupied && !s.reservedFor);
+    const candidates=npcs.filter(n=>n.kind==='competitor' && !n.seated &&
+      !n.disembarking && !n.boardingAtStation);
+    if(!empty || !candidates.length){
+      G.emptySeatFillTimer=0;
+      return;
+    }
+    G.emptySeatFillTimer+=dt;
+    let closest=candidates[0],best=Infinity;
+    candidates.forEach(n=>{
+      const d=dist2(n.x,n.z,empty.interactionPoint.x,empty.interactionPoint.z);
+      if(d<best){best=d;closest=n;}
+    });
+    closest.avoidSeatTimer=0;
+    closest.targetSeat=empty;
+    if(G.emptySeatFillTimer>=1.0 && !empty.occupied){
+      npcSit(closest,empty);
+      G.emptySeatFillTimer=0;
+    }
+  }
+
+  function getStandingSlot(n){
+    const index=n.standingIndex||0;
+    const columns=7;
+    const column=index%columns;
+    const row=Math.floor(index/columns)%2;
+    return {
+      x:-6.0+column*2.0,
+      z:row===0 ? -0.55 : 0.55
+    };
   }
 
   // SEAT_RUSH 단계에서 매 프레임 호출되는 통합 함수(게이지 UI + NPC 이동/점유)
@@ -126,8 +181,9 @@
     seats.forEach(s=>{
       if (s.occupied || s.reservedFor) return; // 예약된 좌석(빌런 퇴치/선행 보상)은 노리지 않음
       const targeting = npcs.filter(o=> o!==n && !o.seated && o.targetSeat===s).length;
+      if(targeting>0) return; // 한 좌석에는 한 NPC만 접근하도록 목표를 독점한다.
       const d = Math.sqrt(dist2(n.x,n.z,s.interactionPoint.x,s.interactionPoint.z));
-      const score = d + targeting*3.2; // 혼잡한 좌석일수록 매력도 감소
+      const score = d;
       if (score<bestScore){ bestScore=score; best=s; }
     });
     return best;
@@ -135,12 +191,22 @@
 
   function npcSit(n, s){
     if (s.occupied || s.reservedFor) return; // 예약된 좌석(빌런 퇴치 보상)은 NPC가 앉을 수 없음
+    if (window.GameModules && !window.GameModules.SeatCompetition.npcArrived(s,n)) return;
     s.occupied=true; s.occupant=n; n.seated=true; n.seatRef=s;
     s.captureProgress=0; s.npcProgress=0; s.npcClaimantRef=null;
     placeCharacterOnSeat(n.mesh, s);
+    n.x=n.mesh.position.x;
+    n.z=n.mesh.position.z;
   }
 
   function moveNPCTo(n, tx, tz, dt){
+    if (window.GameModules){
+      return window.GameModules.MovementSystem.moveTowards(n,{x:tx,z:tz},dt,{
+        speed:n.moveSpeed||2.6,
+        stopDistance:0.15,
+        bounds:{xMin:CAR.xMin,xMax:CAR.xMax,zMin:CAR.platformZ,zMax:CAR.aisleZMax}
+      });
+    }
     const dx=tx-n.x, dz=tz-n.z; const d=Math.hypot(dx,dz);
     if (d<0.15) return true;
     const spd = n.moveSpeed || 2.6;
@@ -193,13 +259,25 @@
     for (let i=npcs.length-1; i>=0; i--){
       const n = npcs[i];
       if (!n.disembarking) continue;
+      // 먼저 문 안쪽 대기점으로 이동한 뒤 같은 x축을 유지하며 문을 통과한다.
+      // 대각선으로 바깥 목표를 향해 벽을 뚫고 나가는 현상을 방지한다.
       const targetX = n.exitTargetX;
-      const targetZ = CAR.platformZ - 1.2; // 승강장 바깥까지 완전히 빠져나감
+      const targetZ = n.disembarkPhase==='THROUGH_DOOR'
+        ? CAR.platformZ-1.2
+        : CAR.farWallZ+0.65;
       const dx=targetX-n.x, dz=targetZ-n.z;
       const d=Math.hypot(dx,dz);
       if (d<0.3){
-        scene.remove(n.mesh);
-        npcs.splice(i,1);
+        if(n.disembarkPhase!=='THROUGH_DOOR'){
+          n.x=targetX;
+          n.z=targetZ;
+          n.mesh.position.set(n.x,0,n.z);
+          // 문이 열릴 때까지 문 안쪽 차선에서 대기한다.
+          if(G.doorsOpen) n.disembarkPhase='THROUGH_DOOR';
+        } else {
+          scene.remove(n.mesh);
+          npcs.splice(i,1);
+        }
         continue;
       }
       const spd = n.moveSpeed || 2.6;
@@ -207,6 +285,53 @@
       n.mesh.position.set(n.x, 0, n.z);
       n.mesh.rotation.y = Math.atan2(dx,dz);
     }
+  }
+
+  function beginNPCDisembark(n){
+    if(n.disembarking) return;
+    const activeCount=npcs.filter(o=>o.disembarking).length;
+    const lanes=[-1.05,-0.7,-0.35,0,0.35,0.7,1.05];
+    n.disembarking=true;
+    n.disembarkPhase='TO_DOOR';
+    n.exitTargetX=lanes[activeCount%lanes.length];
+    n.targetSeat=null;
+    if(n.seated && n.seatRef){
+      n.x=n.mesh.position.x;
+      n.z=n.mesh.position.z;
+      n.seatRef.occupied=false;
+      n.seatRef.occupant=null;
+      n.seated=false;
+      n.seatRef=null;
+      n.mesh.scale.set(1,1,1);
+    }
+  }
+
+  // 서 있는 NPC가 빌런 주변에서 멈춰 있지 않고 위험 반대 방향으로 피하도록 한다.
+  function updateNPCAvoidVillains(dt){
+    npcs.forEach(n=>{
+      if(n.seated || n.disembarking || n.isYielder) return;
+      let pushX=0, pushZ=0;
+      villains.forEach(v=>{
+        if(v.defeated) return;
+        const dx=n.x-v.x, dz=n.z-v.z;
+        const d=Math.hypot(dx,dz);
+        if(d>0.01 && d<2.25){
+          const strength=(2.25-d)/2.25;
+          pushX+=dx/d*strength;
+          pushZ+=dz/d*strength;
+        }
+      });
+      const length=Math.hypot(pushX,pushZ);
+      if(length<=0.01) return;
+      const speed=1.4;
+      n.x=THREE.MathUtils.clamp(n.x+pushX/length*speed*dt,CAR.xMin,CAR.xMax);
+      n.z=THREE.MathUtils.clamp(n.z+pushZ/length*speed*dt,CAR.aisleZMin,CAR.aisleZMax);
+      n.wanderTX=n.x+pushX/length;
+      n.wanderTZ=n.z+pushZ/length;
+      n.wanderTimer=Math.max(n.wanderTimer,0.8);
+      n.mesh.position.set(n.x,Math.abs(Math.sin(performance.now()*0.011+n.wobble))*0.05,n.z);
+      n.mesh.rotation.y=Math.atan2(pushX,pushZ);
+    });
   }
 
   /* ============ Villain AI ============ */
@@ -218,9 +343,27 @@
       if (v.hitFlash>0){ v.hitFlash-=dt; }
       const flash = v.hitFlash>0 ? Math.sin(performance.now()*0.05)*0.15 : 0;
 
+      if (!v.hasApproachedPlayer && window.GameModules){
+        window.GameModules.MovementSystem.approachPlayer(v,player.position,dt,{
+          speed:v.type==='drunk'?1.55:1.3,
+          stopDistance:v.type==='drunk'?0.75:1.45,
+          bounds:{xMin:CAR.xMin,xMax:CAR.xMax,zMin:-1.2,zMax:1.2}
+        });
+        v.mesh.position.set(v.x,0,v.z);
+        return;
+      }
+
       if (v.type==='drunk'){
         // WANDER / HIT — 불규칙 이동, 예측 불가능한 취객
         if (v.state==='HIT'){ if(v.timer>0.3){ v.state='WANDER'; v.timer=0; } }
+        else if(G.posture===Posture.SEATED && window.GameModules){
+          // 착석 플레이어에게는 무작위로 멀어지지 않고 공격 거리까지 확실히 접근한다.
+          window.GameModules.MovementSystem.moveTowards(v,player.position,dt,{
+            speed:1.45,
+            stopDistance:0.55,
+            bounds:{xMin:CAR.xMin,xMax:CAR.xMax,zMin:-1.25,zMax:1.25}
+          });
+        }
         else {
           if (v.timer>1.4){ v.dirX=(Math.random()<0.5?-1:1); v.dirZ=(Math.random()<0.5?-1:1); v.timer=0; }
           v.x += v.dirX*1.4*dt + Math.sin(performance.now()*0.008)*0.01;
@@ -257,13 +400,18 @@
         v.mesh.scale.setScalar(1);
       }
 
-      // 취객 근접 충돌 피해 (서 있는 플레이어)
-      if (v.type==='drunk' && G.posture!==Posture.SEATED){
+      // 취객은 착석 중에도 부딪힐 수 있지만 피해가 크게 줄고 넉백은 받지 않는다.
+      if (v.type==='drunk'){
         const d=Math.hypot(px-v.x,pz-v.z);
-        if (d<0.85 && v.dmgCooldown<=0){
+        if (d<1.15 && v.dmgCooldown<=0){
           v.dmgCooldown=1.0;
-          damage(BALANCE.villainCollisionDamage);
-          knockPlayerFrom(v, BALANCE.drunkKnockbackDistance, 0.3);
+          if(G.posture===Posture.SEATED){
+            damage(BALANCE.villainCollisionDamage*0.35);
+            forceStandFromVillain(v,0.65);
+          } else {
+            damage(BALANCE.villainCollisionDamage);
+            knockPlayerFrom(v, BALANCE.drunkKnockbackDistance, 0.3);
+          }
         }
       }
     });
@@ -313,6 +461,7 @@
           v.swingHit = true; // 공격 판정은 이 프레임에 단 1회만
           if (G.posture===Posture.SEATED){
             damage(BALANCE.villainCollisionDamage*BALANCE.backpackSeatedDamageMultiplier);
+            forceStandFromVillain(v,0.8);
           } else if (G.posture===Posture.HOLDING_HANDLE){
             damage(BALANCE.villainCollisionDamage*0.3);
           } else {

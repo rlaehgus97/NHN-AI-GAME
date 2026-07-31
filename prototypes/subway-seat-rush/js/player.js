@@ -166,6 +166,11 @@
   function defeatVillain(v){
     v.defeated=true; v.state='DEFEATED';
     scene.remove(v.mesh);
+    // 퇴치와 공격 판정이 같은 프레임에 겹쳐도 플레이어 입력 잠금이 남지 않게 한다.
+    G.stun=0;
+    G.risingTimer=0;
+    G.knockback.timer=0;
+    G.knockback.distance=0;
     G.villainsDefeated++;
     // 기본 보상: 체력/명예
     heal(BALANCE.villainDefeatHealthReward);
@@ -177,6 +182,15 @@
     } else {
       showCenter('민폐 승객 해결! 명예 +'+BALANCE.villainDefeatHonorReward, false, 1.6);
     }
+  }
+
+  function forceStandFromVillain(v, distance){
+    if(G.posture!==Posture.SEATED) return false;
+    standUpFromSeat();
+    G.risingTimer=0;
+    knockPlayerFrom(v,distance||0.7,0.18);
+    showCenter('충격으로 자리에서 밀려났습니다!',true,1.1);
+    return true;
   }
 
   /* ============ Collision handling ============ */

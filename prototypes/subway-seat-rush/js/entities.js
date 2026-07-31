@@ -22,11 +22,14 @@
       mesh, kind, targetSeat:null, seated:false, seatRef:null,
       x, z, standSpot:{x,z},
       boardTarget: { x, z: 0 },   // 탑승 단계에서 걸어 들어갈 목표(차량 통로 중앙)
+      boardingAtStation:false, boardingDelay:0,
       isYielder:false, wobble:Math.random()*6,
       wanderTX:x, wanderTZ:z, wanderTimer:Math.random()*2, wanderSpeed:1.3+Math.random()*0.9,
       moveSpeed, captureRate,
       thankTag:null, thankTagTimer:0,
-      disembarking:false, exitTargetX:0
+      standingIndex:npcs.length,
+      avoidSeatTimer:0, fleeingVillain:false,
+      disembarking:false, disembarkPhase:null, exitTargetX:0
     };
     npcs.push(npc);
     return npc;
@@ -34,7 +37,8 @@
 
   function spawnPassengers() {
     // 좌석 경쟁 NPC: 승강장에 플레이어와 함께 대기 (문이 열려야 탑승 가능)
-    const count = BALANCE.competitorCount;
+    // low/empty 분기가 다시 사용되더라도 시작 승객이 완전히 사라지지 않도록 최소 4명을 둔다.
+    const count = G.initialCrowd==='empty' ? 4 : BALANCE.competitorCount;
     for (let i=0;i<count;i++){
       const t = count>1 ? i/(count-1) : 0.5;
       const x = CAR.xMin + 0.6 + t*(CAR.xMax - CAR.xMin - 1.2);
@@ -62,7 +66,7 @@
     scene.add(mesh);
     const v = {
       type, mesh, x, z:0.2,
-      hp: 3,
+      hp: 1,
       state: (type==='drunk'?'WANDER':'MOVE'),
       timer: 0, dirX:(Math.random()<0.5?-1:1), dirZ:(Math.random()<0.5?-1:1),
       hitFlash:0, hitStop:0, defeated:false,
@@ -72,7 +76,10 @@
       swingTimer:0, swingDuration:0, swingHit:false,
       moveOffset:0, moveRetargetAt:0,
       bodyPivot: mesh.userData.bodyPivot || null,
-      backpackPivot: mesh.userData.backpackPivot || null
+      backpackPivot: mesh.userData.backpackPivot || null,
+      hasApproachedPlayer:false,
+      approachOffsetX:(Math.random()-0.5)*0.8,
+      approachOffsetZ:0
     };
     villains.push(v);
     AudioFX.play(type==='drunk' ? 'villain' : 'backpack');

@@ -32,7 +32,8 @@
 
 ## 실행 방법
 
-빌드 과정이 없는 순수 HTML/CSS/JS 프로젝트입니다.
+빌드 과정이 없는 순수 HTML/CSS/JS 프로젝트입니다. 신규 시스템은 ES Module을
+사용하므로 로컬 서버 실행이 필수입니다.
 
 ```bash
 # 로컬 서버로 실행 (권장 — 모듈 script 로드 시 CORS 문제 방지)
@@ -40,7 +41,7 @@ python3 -m http.server 8000
 # 이후 브라우저에서 http://localhost:8000 접속
 ```
 
-또는 `index.html`을 브라우저로 직접 더블클릭해서 열어도 대부분의 환경에서 동작합니다.
+`file://`로 직접 열면 ES Module 보안 정책 때문에 실행되지 않습니다.
 
 ## 기술 스택
 
@@ -62,6 +63,13 @@ js/
   systems.js          # 체력/명예, 좌석 양보 보상, 랜덤 이벤트 스케줄, 좌석 예약
   ui.js               # HUD 업데이트, 중앙 메시지 대기열
   main.js             # 상태 전환(승강장→탑승→경쟁→이동→도착), 메인 루프, 입력, 재시작
+  modules/
+    movement-system.js # NPC·빌런 공용 이동 인터페이스
+    seat-competition.js# 교체 가능한 좌석 경쟁 전략
+    station-system.js  # 역 도착 시 일시 상태 정리
+    stage-config.js    # 스테이지 타임라인 데이터
+    event-director.js  # 이벤트 슬롯 선택·실행 시점 관리
+    runtime.js         # 모듈 조립 및 기존 코드 연결
 ```  
 
 ## 현재 상태 / TODO
