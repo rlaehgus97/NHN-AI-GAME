@@ -4,11 +4,15 @@
   /* ============ Health and honor systems ============ */
   function damage(amount){
     G.health = Math.max(0, G.health - amount);
-    if (G.health <= 0 && G.state === GameState.TRAVELING){
-      endGame(false, '체력이 모두 소진되었습니다.');
+    G.stress = BALANCE.maxHealth-G.health;
+    if (G.health <= 0 && (G.state === GameState.TRAVELING || G.state === GameState.ARRIVAL)){
+      endGame(false, '통근 스트레스가 100에 도달했습니다.');
     }
   }
-  function heal(amount){ G.health = Math.min(BALANCE.maxHealth, G.health + amount); }
+  function heal(amount){
+    G.health = Math.min(BALANCE.maxHealth, G.health + amount);
+    G.stress = BALANCE.maxHealth-G.health;
+  }
   function addHonor(amount){ G.honor = Math.max(0, Math.min(BALANCE.maxHonor, G.honor + amount)); }
   function honorGrade(h){
     if (h>=70) return '의인';
@@ -49,6 +53,8 @@
     // NPC가 플레이어를 바라보며 감사 태그 표시
     npc.mesh.scale.set(1,1,1);
     npc.mesh.position.set(candidateSeat.x, 0, candidateSeat.z);
+    npc.x=candidateSeat.x;
+    npc.z=candidateSeat.z;
     const dx=player.position.x-candidateSeat.x, dz=player.position.z-candidateSeat.z;
     npc.mesh.rotation.y = Math.atan2(dx,dz);
     if (npc.thankTag){ npc.mesh.remove(npc.thankTag); }
@@ -67,17 +73,27 @@
     candidateSeat.reservedFor = 'player';
     candidateSeat.reservedTimer = BALANCE.seatReservationDuration;
 
-    showCenter(introText+'\n승객이 자리를 양보했습니다.', false, 2.4);
+    showCenter(introText+'\n승객이 양보한 초록색 자리를 클릭하세요!', false, 2.4);
   }
 
   // 예약된 좌석의 남은 시간을 갱신하고, 시간이 지나면 예약 해제(다른 NPC도 다시 앉을 수 있게 됨)
   function updateSeatReservations(dt){
     seats.forEach(s=>{
+      if(s.reservedFor==='player-safety') return;
       if (s.reservedFor && !s.occupied){
         s.reservedTimer -= dt;
         if (s.reservedTimer<=0){ s.reservedFor=null; s.reservedTimer=0; }
       }
     });
+  }
+
+  function ensurePlayerSafetyResources(){
+    const safetySeat=seats.find(s=>!s.occupied) || seats[0];
+    if(safetySeat){
+      safetySeat.reservedFor='player-safety';
+      safetySeat.reservedTimer=BALANCE.stageDuration+10;
+    }
+    handles.forEach((handle,index)=>{ handle.playerSafety=index<2; });
   }
 
   /* ============ Event manager (자리 양보 / 급정거) ============
@@ -86,6 +102,7 @@
   =============================================================================== */
   function openYieldEvent(){
     G.flags.yieldDone = true;
+    clearPlayerSeatTarget();
     G.eventReturnState = G.state;
     G.state = GameState.EVENT;
     // 양보 NPC 등장 (플레이어 앞)
@@ -111,7 +128,7 @@
       const s = G.occupiedSeat;
       standUpFromSeat();
       if (s && yn){ s.occupied=true; s.occupant=yn; yn.seated=true; yn.seatRef=s;
-        yn.mesh.position.set(s.x,CAR.seatSitY,s.z); yn.mesh.scale.set(1,0.72,1); }
+        placeCharacterOnSeat(yn.mesh, s); yn.x=yn.mesh.position.x; yn.z=yn.mesh.position.z; }
       showCenter('자리를 양보했습니다. 명예 +'+BALANCE.yieldSeatHonorReward, false, 1.8);
       // 선행에 대한 보답: 앉아있던 다른 승객 중 1명이 무조건 감동해서 자리를 양보함
       attemptSeatReward('당신의 선행을 지켜본 승객이 있습니다!');
@@ -127,10 +144,13 @@
 
   function triggerSuddenStopWarn(){
     G.flags.suddenStopWarned = true;
+    AudioFX.play('warning');
     showCenter('열차가 급정거합니다! 손잡이를 잡으세요!', true, 1.5);
   }
   function doSuddenStop(){
     G.flags.suddenStopDone = true;
+    AudioFX.play('brake');
+    VisualFX.flash('brake');
     G.shake = Math.max(G.shake, 0.5);
     if (G.posture===Posture.SEATED){
       damage(BALANCE.suddenStopDamage * BALANCE.suddenStopSeatedMultiplier); // 가장 안전하지만 완전 무적은 아님
@@ -143,6 +163,15 @@
     }
     // NPC/빌런 흔들림
     villains.forEach(v=>{ if(!v.defeated){ v.z += 0.3; } });
+    if(slipperyZones.some(zone=>playerInZone(zone)) && G.posture===Posture.STANDING){
+      damage(7);
+      G.stun=Math.max(G.stun,0.65);
+      G.knockback.timer=BALANCE.knockbackDuration;
+      G.knockback.distance=1.4;
+      G.knockback.dirX=(Math.random()<.5?-1:1);
+      G.knockback.dirZ=.35;
+      showCenter('미끄러운 바닥에서 중심을 잃었습니다!',true,1.4);
+    }
   }
 
   /* ============ Stage timer and station manager ============ */
