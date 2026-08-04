@@ -8,11 +8,19 @@
   let handles = [];           // HandlePoint objects
   let npcs = [];              // NPCPassenger (competitors)
   let villains = [];          // Villain objects
+  let hazardZones = [];       // 설치형 스트레스 존
+  let slipperyZones = [];     // 국물/우산이 만든 미끄러운 바닥
   let doorLeft, doorRight;    // 문 메시
   let exitMarker;             // 출구 표시
-  const keys = {};            // 눌린 키 상태
-  let leftMouseDown = false;
-  let started = false;        // 애니메이션 루프 1회만 시작
+  const keys = {};            // 눌린 키 상태 (SHIFT / E / F / SPACE 전용, 이동키는 사용하지 않음)
+
+  /* ============ 마우스 포인터 입력 ============ */
+  let raycaster = null;              // 좌석/빌런/바닥 판정용
+  let pointerNDC = null;             // 정규화된 화면 좌표(-1~1)
+  let groundPlane = null;            // y=0 평면 (포인터 월드 좌표 계산용)
+  let seatPickables = [];            // 좌석 클릭 판정용 투명 박스 목록
+  let leftMouseDown = false;         // 좌클릭 유지 여부 (G.pointerHeld와 동기화)
+  let started = false;               // 애니메이션 루프 1회만 시작
 
   // 게임 진행 상태
   const G = {};
@@ -24,14 +32,39 @@
     G.state = GameState.READY;
     G.posture = Posture.STANDING;
     G.health = BALANCE.maxHealth;
+    G.stress = 0;
     G.honor = BALANCE.startHonor;
     G.timeLeft = BALANCE.stageDuration;
     G.stateTimer = 0;          // 현재 상태 경과
     G.stageElapsed = 0;        // TRAVELING 총 경과
     G.stationIndex = 0;
+    G.initialCrowd = Math.random()<0.5 ? 'empty' : 'crowded';
+    G.midStationFlow = G.initialCrowd==='empty' ? 'boarding' : 'disembarking';
+    G.intermediateDoorTimer = 0;
+    G.pendingSuddenStop = 0;
+    G.emptySeatFillTimer = 0;
+    G.crowdPressureTimer = 0;
+    G.crowdWarningActive = false;
+    G.crowdExposure = 0;
+    G.encircled = false;
+    G.crowdZoneMesh = null;
+    G.surgeTimer = 0;
+    G.doorBlocker = null;
+    G.seatsSettled = false;
+    G.seatsSettledAt = 0;
     G.doorsOpen = false;
     G.occupiedSeat = null;
     G.heldHandle = null;
+
+    /* ============ 마우스 이동 / 좌석 선택 상태 ============ */
+    G.pointerHeld = false;                       // 좌클릭을 누르고 있는가
+    G.pointerWorld = { x:0, z:0, valid:false };  // 포인터가 가리키는 바닥의 월드 좌표
+    G.hoveredSeat = null;                        // 마우스가 올라간 빈 좌석
+    G.targetSeat = null;                         // 클릭으로 선택한 목표 좌석
+    G.autoMovingToSeat = false;                  // 목표 좌석으로 자동 이동 중인가
+    G.contestedSeat = null;                      // 실제로 경쟁이 진행 중인 좌석
+    G.seatCompetitionActive = false;             // 좌석 경쟁 진행 여부
+    leftMouseDown = false;
 
     // 가방 공격: WINDUP → STRIKE → RECOVERY 상태 머신
     G.bagCooldown = 0;
@@ -51,6 +84,11 @@
     G.villainsDefeated = 0;
     G.arrivalTimeLeft = BALANCE.arrivalExitDuration;
 
+    // 핸드폰은 현재 스트레스 40 이상에서만 열 수 있으며, 닫아도 각 미니게임 진행도는 유지된다.
+    G.phoneUnlocked = false;
+    G.phoneUnlockNotified = false;
+    G.phoneOpen = false;
+
     // 이벤트 플래그
     G.flags = { drunkSpawned:false, backpackSpawned:false, yieldDone:false,
                 suddenStopWarned:false, suddenStopDone:false };
@@ -63,4 +101,5 @@
       backpackAt: randRange(BALANCE.backpackSpawnRange),
       suddenStopWarnAt: randRange(BALANCE.suddenStopRange)
     };
+    if (window.GameModules) window.GameModules.director.reset();
   }

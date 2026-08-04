@@ -3,18 +3,24 @@
 
   /* ============ Game constants and balance ============ */
   const BALANCE = {
-    stageDuration: 45,
+    stageDuration: 75,
 
     // 탑승 단계
-    boardingApproachDuration: 1.0,   // 문 닫힌 채 "도착했습니다" 대기 시간
-    boardingEntryDuration: 1.8,      // 문이 열린 뒤 탑승/진입 시간 (이후 좌석 경쟁 시작)
-    seatRushDuration: 9,
-    arrivalExitDuration: 8,
+    boardingApproachDuration: 0.8,   // 0~5초 탑승/HUD 구간 안에서 문 열림
+    boardingEntryDuration: 2.4,      // NPC와 플레이어 탑승
+    seatRushDuration: 1.8,           // 총 5초 후 자유 탐색 구간 진입
+    seatSettleLeadTime: 0.45,        // 운행 시작 전 NPC 착석 정산을 먼저 보여주는 시간
+    seatRushGraceTime: 2.6,          // 플레이어가 좌석으로 이동/경쟁 중이면 좌석 단계를 잠시 더 유지
+    arrivalExitDuration: 5,
     disembarkRatio: 0.4,  // 목적지 도착 시 함께 하차하는 승객 비율
 
     maxHealth: 100,
     maxHonor: 100,
     startHonor: 50,
+
+    // 스트레스 해소용 핸드폰 미니게임
+    phoneUnlockStress: 40,
+    phoneWorldTimeScale: 0.35,
 
     standingDrainPerSecond: 2.2,
     crowdedDrainMultiplier: 1.5,   // (프로토타입: 빌런 근접시 적용)
@@ -58,17 +64,26 @@
     kindnessBuffDuration: 8,
     kindnessDrainMultiplier: 0.5,
 
-    // 플레이어 이동
-    moveSpeed: 4.2,
-    dashSpeed: 7.5,
+    /* ============ 플레이어 이동 (마우스 포인터 방향 이동) ============ */
+    moveSpeed: 5.5,                 // 기본 이동 속도 (기존 4.2 → 5.5)
+    dashSpeed: 8.5,                 // SHIFT 대시 속도 (기존 7.5 → 8.5)
+    pointerMoveDeadzone: 0.30,      // 포인터가 이 거리 안이면 제자리(떨림 방지)
+    pointerFaceDeadzone: 0.35,      // 정지 상태에서 포인터를 바라보기 시작하는 최소 거리
 
-    // 좌석 경쟁 (플레이어 게이지 vs 경쟁 NPC 게이지, 먼저 100에 도달하는 쪽이 승리)
-    seatCaptureGainPerPress: 16,       // 완화 (기존 22 → 16): 연타 스킬 비중 증가
-    seatCaptureDecayPerSecond: 14,
-    npcCaptureRatePerSecond: 22,       // NPC 기준 점유 속도 (개체별로 ±20% 편차 적용됨)
+    /* ============ 좌석 클릭 / 자동 이동 ============ */
+    seatClickMaxDistance: 22,       // 이 거리 안의 좌석만 클릭으로 선택 가능(사실상 객차 전체)
+    seatArriveDistance: 0.42,       // 좌석 상호작용 지점 도착 판정 거리 → 도착 시 즉시 착석
+    seatCompetitionRange: 1.55,     // 플레이어와 경쟁 NPC가 이 거리 안에 함께 있어야 경쟁 시작
+    seatCompetitionCancelRange: 2.9,// 경쟁 중 이 거리보다 멀어지면 경쟁 포기
+    villainClickRadius: 1.3,        // 포인터가 빌런 위치에서 이 거리 안이면 "빌런 클릭"으로 판정
 
-    competitorCount: 14,  // 좌석 경쟁 NPC 수 (좌석 10개보다 많아 항상 몇 명은 서서 감)
-    seatCount: 10,         // 전체 좌석 수 (scene.js의 seatDefs 배열과 일치해야 함)
+    // 좌석 경쟁 (플레이어 SPACE 연타 게이지 vs 경쟁 NPC 게이지, 먼저 100에 도달하는 쪽이 승리)
+    seatCaptureGainPerPress: 13,
+    seatCaptureDecayPerSecond: 12,
+    npcCaptureRatePerSecond: 24,       // NPC 기준 점유 속도 (개체별로 ±20% 편차 적용됨)
+
+    competitorCount: 16,  // 좌석 경쟁 NPC 수 (좌석 15개보다 많아 항상 몇 명은 서서 감)
+    seatCount: 15,        // 전체 좌석 수 (scene.js의 seatDefs 배열과 반드시 일치)
 
     // 이벤트 발생 시간 범위(초). 게임 시작마다 이 범위 내에서 랜덤 결정됨
     yieldMinTime: 24,
@@ -79,6 +94,16 @@
   };
 
   /* ============ Game state / enums ============ */
+  const AI_DIRECTOR = {
+    longSeatDuration: 10,
+    rapidToggleWindow: 6,
+    rapidToggleTransitions: 3,
+    seatLockDuration: 5,
+    longSeatCooldown: 15,
+    rapidToggleCooldown: 12,
+    constraintMinGap: 3
+  };
+
   const GameState = {
     READY: 'READY', BOARDING: 'BOARDING', SEAT_RUSH: 'SEAT_RUSH',
     TRAVELING: 'TRAVELING', EVENT: 'EVENT', ARRIVAL: 'ARRIVAL',
@@ -86,9 +111,18 @@
   };
   const Posture = { STANDING:'STANDING', SEATED:'SEATED', HOLDING_HANDLE:'HOLDING_HANDLE' };
 
-  // 차량 내부 경계 (aisle)
-  const CAR = { xMin:-7.3, xMax:7.3, aisleZMin:-1.25, aisleZMax:1.25,
-                doorX:1.5, platformZ:-3.6, farWallZ:-2.2, nearWallZ:2.2,
+  /* ============ 차량 치수 (확장판) ============
+     기존: 길이 15.4 / 통로 ±1.25 / 좌석 10석
+     변경: 길이 19.0 / 통로 ±1.70 / 좌석 15석 — 통로와 좌석 간격을 넓혀 이동을 편하게 함
+  ============================================== */
+  const CAR_LENGTH = 19.0;   // 차량 전체 길이 (scene.js와 공유)
+  const CAR_WIDTH  = 6.0;    // 차량 전체 폭 (scene.js와 공유)
+
+  const CAR = { xMin:-8.6, xMax:8.6, aisleZMin:-1.70, aisleZMax:1.70,
+                doorX:1.9, platformZ:-4.6, farWallZ:-2.9, nearWallZ:2.9,
+                benchZ: 2.40,         // 벤치 중심 z (양쪽 대칭)
+                seatZ: 2.35,          // 좌석 상판 중심 z (양쪽 대칭)
+                seatInteractOffset: 0.95, // 좌석 → 통로쪽 상호작용 지점까지 거리
                 seatSitY: 0.68,       // 캐릭터 하체가 좌석 상판에 묻히지 않는 착석 높이
                 seatSitOffset: 0.10,  // NPC와 플레이어가 함께 쓰는 착석 중심 위치
                 seatedScaleY: 0.82 };
