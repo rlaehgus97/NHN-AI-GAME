@@ -328,6 +328,7 @@
   function endGame(success, reason){
     if (G.state===GameState.CLEAR || G.state===GameState.GAME_OVER) return;
     G.state = success ? GameState.CLEAR : GameState.GAME_OVER;
+    if (window.PhoneMiniGames) PhoneMiniGames.close(true);
     clearPlayerSeatTarget();
     G.pointerHeld=false; leftMouseDown=false; G.hoveredSeat=null;
     document.body.classList.remove('train-moving');
@@ -371,6 +372,7 @@
     document.getElementById('startScreen').classList.add('hidden');
     document.getElementById('resultOverlay').classList.add('hidden');
     document.getElementById('eventOverlay').classList.add('hidden');
+    if (window.PhoneMiniGames) PhoneMiniGames.reset();
     clearDynamicObjects();
     // 상태 초기화 (좌석 선택/hover/경쟁 상태 포함)
     resetGameData();
@@ -414,8 +416,10 @@
   /* ============ Animation loop ============ */
   function animate(){
     requestAnimationFrame(animate);
-    let dt = clock.getDelta();
-    if (dt>0.05) dt=0.05; // 탭 비활성 등으로 큰 dt 방지
+    let realDt = clock.getDelta();
+    if (realDt>0.05) realDt=0.05; // 탭 비활성 등으로 큰 dt 방지
+    if (window.PhoneMiniGames) PhoneMiniGames.update(realDt);
+    const dt = G.phoneOpen ? realDt*BALANCE.phoneWorldTimeScale : realDt;
 
     // READY(시작 화면) 상태에서는 플레이어/NPC/타이머/이벤트가 절대 진행되지 않음
     if (G.state!==GameState.READY && G.state!==GameState.CLEAR && G.state!==GameState.GAME_OVER){
@@ -489,10 +493,20 @@
 
   /* ============ Input ============ */
   function onKeyDown(e){
+    const k = e.key.toLowerCase();
+    if (k==='p' && window.PhoneMiniGames){
+      e.preventDefault();
+      PhoneMiniGames.toggle();
+      return;
+    }
+    if (G.phoneOpen && window.PhoneMiniGames){
+      e.preventDefault();
+      PhoneMiniGames.keyDown(k);
+      return;
+    }
     // 시작/결과 화면에서는 게임 입력을 완전히 차단
     if (G.state===GameState.READY || G.state===GameState.CLEAR || G.state===GameState.GAME_OVER) return;
 
-    const k = e.key.toLowerCase();
     // 이벤트 모달 중 1/2 선택
     if (G.state===GameState.EVENT){
       if (k==='1'){ resolveYield(1); return; }

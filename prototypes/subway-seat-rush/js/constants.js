@@ -18,6 +18,10 @@
     maxHonor: 100,
     startHonor: 50,
 
+    // 스트레스 해소용 핸드폰 미니게임
+    phoneUnlockStress: 40,
+    phoneWorldTimeScale: 0.35,
+
     standingDrainPerSecond: 2.2,
     crowdedDrainMultiplier: 1.5,   // (프로토타입: 빌런 근접시 적용)
     villainDrainMultiplier: 1.8,

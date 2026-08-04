@@ -91,6 +91,7 @@
 
   // 이 상태에서만 게임 월드에 대한 마우스 입력을 허용한다.
   function isWorldInputAllowed(){
+    if (G.phoneOpen) return false;
     return G.state===GameState.BOARDING || G.state===GameState.SEAT_RUSH ||
            G.state===GameState.TRAVELING || G.state===GameState.ARRIVAL;
   }

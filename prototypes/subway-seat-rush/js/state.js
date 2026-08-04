@@ -84,6 +84,11 @@
     G.villainsDefeated = 0;
     G.arrivalTimeLeft = BALANCE.arrivalExitDuration;
 
+    // 핸드폰은 현재 스트레스 40 이상에서만 열 수 있으며, 닫아도 각 미니게임 진행도는 유지된다.
+    G.phoneUnlocked = false;
+    G.phoneUnlockNotified = false;
+    G.phoneOpen = false;
+
     // 이벤트 플래그
     G.flags = { drunkSpawned:false, backpackSpawned:false, yieldDone:false,
                 suddenStopWarned:false, suddenStopDone:false };

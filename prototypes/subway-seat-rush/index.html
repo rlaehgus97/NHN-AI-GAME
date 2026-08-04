@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>지옥철 생존기</title>
-<link rel="stylesheet" href="style.css?v=mouse-seat-2" />
+<link rel="stylesheet" href="style.css?v=phone-games-3" />
 </head>
 <body>
   <div id="canvasWrap"></div>
@@ -39,12 +39,59 @@
 
   <div id="hudBottom" class="hud">
     <div id="interactPrompt">&nbsp;</div>
-    <div id="controlsHint">마우스 이동 · 빈 좌석 클릭 착석 · 경쟁 시 SPACE 연타 · SHIFT 대시 · F 가방 · E 손잡이</div>
+    <div id="controlsHint">마우스 이동 · 좌석 클릭 · SPACE 경쟁 · SHIFT 대시 · F 가방 · E 손잡이 · P 핸드폰</div>
   </div>
 
   <div id="centerMsg" class="hud"><span></span></div>
   <div id="screenFx" aria-hidden="true"></div>
   <button id="soundToggle" type="button" aria-label="소리 끄기" title="소리 켜기/끄기">🔊</button>
+  <button id="phoneQuickBtn" type="button" aria-label="핸드폰 열기" title="스트레스 40 이상일 때 사용 가능" disabled>📱 <span>P</span></button>
+
+  <!-- 핸드폰을 열어도 가장자리로 열차 상황이 보이며, 배경 게임은 느리게 계속 진행된다. -->
+  <div id="phoneOverlay" class="hidden" aria-hidden="true">
+    <div id="phoneShell">
+      <div class="phoneTop"><span>19:24</span><span id="phoneSlowTag">열차 시간 ×0.35</span><span>▮▮▮</span></div>
+      <div class="phoneHeader">
+        <button id="phoneHomeBtn" type="button" aria-label="게임 목록">‹</button>
+        <strong id="phoneTitle">퇴근 탈출구</strong>
+        <button id="phoneCloseBtn" type="button" aria-label="핸드폰 닫기">✕</button>
+      </div>
+      <div id="phoneNotice">핸드폰을 보는 동안에도 열차와 위험은 느리게 계속 움직입니다.</div>
+      <main id="phoneScreen">
+        <section id="phoneResult" class="hidden" role="status" aria-live="polite">
+          <div class="resultIcon">🎉</div>
+          <h2 id="phoneResultTitle">스테이지 클리어!</h2>
+          <p id="phoneResultText">스트레스가 20 감소했습니다.</p>
+          <button id="phoneResultConfirm" type="button">확인</button>
+        </section>
+        <section id="phoneHome" class="phonePage active">
+          <p class="phoneIntro">잠깐만 현실 도피하기</p>
+          <button class="gameApp" data-game="dodge"><span>💬</span><b>상사 문자 피하기</b><small>좌우로 움직여 메시지를 피하세요</small></button>
+          <button class="gameApp" data-game="puzzle"><span>🧩</span><b>퇴근 퍼즐</b><small>조각을 같은 모양 칸에 끌어 놓으세요</small></button>
+          <button class="gameApp" data-game="soul"><span>❤️</span><b>퇴근 의지</b><small>하트를 움직여 업무를 피하세요</small></button>
+        </section>
+        <section id="gameDodge" class="phonePage miniGamePage">
+          <div class="miniStats"><span>남은 시간 <b id="dodgeTime">10.0</b>s</span><span>회복 <b id="dodgeHeal">0</b>/20</span></div>
+          <div id="dodgeField" class="gameField"><div id="dodgePlayer">😵</div></div>
+          <div class="miniHelp">초록 연락은 스트레스 -2 · 빨간 업무는 +2</div>
+        </section>
+        <section id="gamePuzzle" class="phonePage miniGamePage">
+          <div class="miniStats"><span>맞춘 조각 <b id="puzzleScore">0</b>/4</span><span id="puzzleState">조립 중</span></div>
+          <div id="puzzleBoard" aria-label="모양 맞추기 퍼즐">
+            <div id="puzzleTargets"></div>
+            <div id="puzzlePieces"></div>
+          </div>
+          <button id="puzzleReset" class="miniAction" type="button">스테이지 다시 섞기</button>
+        </section>
+        <section id="gameSoul" class="phonePage miniGamePage">
+          <div class="miniStats"><span>남은 시간 <b id="soulTime">8.0</b>s</span><span>HP <b id="soulHp">3</b></span></div>
+          <div id="soulField" class="gameField"><div id="soulPlayer">♥</div></div>
+          <div class="miniHelp">방향키 / WASD로 하트를 이동</div>
+        </section>
+      </main>
+      <div class="phoneBottom">●</div>
+    </div>
+  </div>
 
   <!-- 자리 경쟁이 실제로 진행 중일 때만 표시되는 게이지 -->
   <div id="seatGaugeWrap" class="hud">
@@ -65,7 +112,7 @@
         <div>2. 표시된 빈 좌석을 클릭하세요.</div>
         <div>3. 경쟁자가 없다면 바로 착석합니다.</div>
         <div>4. 같은 좌석을 노리는 승객이 있을 때만 SPACE를 연타하세요.</div>
-        <div class="ctrlSub"><b>SHIFT</b> 대시 · <b>F</b> 가방 휘두르기 · <b>E</b> 손잡이 / 출구 · <b>1 / 2</b> 이벤트 선택</div>
+        <div class="ctrlSub"><b>SHIFT</b> 대시 · <b>F</b> 가방 · <b>E</b> 손잡이 · <b>P</b> 핸드폰(스트레스 40+) · <b>1 / 2</b> 이벤트</div>
       </div>
       <button id="startBtn" class="btn">Game Start</button>
     </div>
@@ -112,6 +159,7 @@
   <script src="js/ai.js?v=mouse-seat-2"></script>
   <script src="js/systems.js?v=mouse-seat-2"></script>
   <script src="js/ui.js?v=mouse-seat-2"></script>
-  <script src="js/main.js?v=mouse-seat-2"></script>
+  <script src="js/minigames.js?v=phone-games-3"></script>
+  <script src="js/main.js?v=phone-games-3"></script>
 </body>
 </html>
