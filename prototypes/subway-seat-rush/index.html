@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>지옥철 생존기</title>
-<link rel="stylesheet" href="style.css?v=phone-games-5" />
+<link rel="stylesheet" href="style.css?v=phone-games-7" />
 </head>
 <body>
   <div id="canvasWrap"></div>
@@ -67,7 +67,7 @@
         <section id="phoneHome" class="phonePage active">
           <p class="phoneIntro">잠깐만 현실 도피하기</p>
           <button class="gameApp" data-game="dodge"><span>💬</span><b>상사 문자 피하기</b><small>좌우로 움직여 메시지를 피하세요</small></button>
-          <button class="gameApp" data-game="puzzle"><span>🧩</span><b>퇴근 퍼즐</b><small>조각을 같은 모양 칸에 끌어 놓으세요</small></button>
+          <button class="gameApp" data-game="puzzle"><span>🔢</span><b>3×3 미니 스도쿠</b><small>숫자를 드래그해 각 행·열에 1·2·3을 채우세요</small></button>
           <button class="gameApp" data-game="soul"><span>❤️</span><b>퇴근 의지</b><small>하트를 움직여 업무를 피하세요</small></button>
         </section>
         <section id="gameDodge" class="phonePage miniGamePage">
@@ -76,12 +76,15 @@
           <div class="miniHelp">초록 연락은 스트레스 -2 · 빨간 업무는 +2</div>
         </section>
         <section id="gamePuzzle" class="phonePage miniGamePage">
-          <div class="miniStats"><span>맞춘 조각 <b id="puzzleScore">0</b>/4</span><span id="puzzleState">조립 중</span></div>
-          <div id="puzzleBoard" aria-label="모양 맞추기 퍼즐">
-            <div id="puzzleTargets"></div>
-            <div id="puzzlePieces"></div>
+          <div class="miniStats"><span>채운 칸 <b id="puzzleScore">3</b>/9</span><span id="puzzleState">숫자를 채워보세요</span></div>
+          <div id="puzzleBoard" aria-label="3×3 미니 스도쿠"></div>
+          <div id="puzzleNumberTray" aria-label="드래그할 숫자">
+            <div class="numberTile" draggable="true" data-number="1">1</div>
+            <div class="numberTile" draggable="true" data-number="2">2</div>
+            <div class="numberTile" draggable="true" data-number="3">3</div>
           </div>
-          <button id="puzzleReset" class="miniAction" type="button">스테이지 다시 섞기</button>
+          <div class="miniHelp">아래 숫자를 끌어서 빈칸에 놓으세요 · 다른 숫자로 다시 놓아 수정할 수 있습니다</div>
+          <button id="puzzleReset" class="miniAction" type="button">새 스도쿠</button>
         </section>
         <section id="gameSoul" class="phonePage miniGamePage">
           <div class="miniStats"><span>남은 시간 <b id="soulTime">8.0</b>s</span><span>HP <b id="soulHp">3</b></span></div>
@@ -159,7 +162,7 @@
   <script src="js/ai.js?v=mouse-seat-2"></script>
   <script src="js/systems.js?v=mouse-seat-2"></script>
   <script src="js/ui.js?v=mouse-seat-2"></script>
-  <script src="js/minigames.js?v=phone-games-5"></script>
-  <script src="js/main.js?v=phone-games-5"></script>
+  <script src="js/minigames.js?v=phone-games-7"></script>
+  <script src="js/main.js?v=phone-games-7"></script>
 </body>
 </html>
