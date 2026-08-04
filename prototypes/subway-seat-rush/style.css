@@ -148,6 +148,8 @@
   .shapePiece.circle { background:#ef4444; }.shapePiece.triangle { background:#22c55e; }.shapePiece.square { background:#3b82f6; }.shapePiece.diamond { background:#a855f7; }
   .miniAction { border:0; border-radius:12px; background:#172033; color:#fff; padding:11px; margin-top:12px; font-weight:800; cursor:pointer; }
   #soulField { background:#050505; border-color:#fff; box-shadow:inset 0 0 0 3px #050505; }
+  #gameSoul { cursor:not-allowed; }
+  #gameSoul .miniHelp { pointer-events:none; }
   #soulPlayer { position:absolute; left:50%; top:78%; transform:translate(-50%,-50%); color:#ef4444; font-size:25px; text-shadow:0 0 8px #ef4444; }
   .soulHazard { position:absolute; top:-5%; width:13px; height:24px; border-radius:6px; background:#fff; box-shadow:0 0 6px #fff; }
   .invincible { opacity:.35; }
