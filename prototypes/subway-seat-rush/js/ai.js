@@ -152,6 +152,12 @@
     }
 
     // 목표 좌석이 다른 승객에게 점유되면 자동 이동을 취소한다.
+    if (isDirectorSeatingLocked()){
+      if (G.targetSeat || G.seatCompetitionActive) clearPlayerSeatTarget();
+      updateSeatCaptureGauge();
+      return;
+    }
+
     if (G.targetSeat && G.targetSeat.occupied){
       const takenByNPC = G.targetSeat.occupant!=='player';
       clearPlayerSeatTarget();
