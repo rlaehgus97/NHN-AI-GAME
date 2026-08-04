@@ -48,7 +48,7 @@
       showCenter('목적지입니다. 문으로 이동하세요!', false, 2.2);
       G.arrivalTimeLeft = BALANCE.arrivalExitDuration;
       // 앉아있거나 손잡이면 자동 해제 안내(수동 E 가능) — 여기선 자동 기립
-      if (G.posture===Posture.SEATED) standUpFromSeat();
+      if (G.posture===Posture.SEATED) standUpFromSeat('arrival');
       if (G.posture===Posture.HOLDING_HANDLE) releaseHandle();
 
       // 일부 승객도 함께 하차: 무작위로 선정해 문 쪽으로 내보낸다 (앉아있었다면 좌석도 비움)
@@ -213,9 +213,24 @@
 
   function updateStageDirector(dt){
     if (!window.GameModules) return;
-    const actions = window.GameModules.director.update(dt);
+    const actions = window.GameModules.director.update(dt, {
+      state:G.state,
+      posture:G.posture,
+      elapsed:G.stageElapsed
+    });
     actions.forEach(action=>{
-      if (action.type==='EVENT_SLOT'){
+      if (action.type==='FORCE_STAND'){
+        console.info('[AI Director][decision]', action.type, action);
+        if (G.state===GameState.TRAVELING && G.posture===Posture.SEATED){
+          standUpFromSeat('ai-director');
+          showCenter('오래 앉아 있어 잠시 일어납니다.', true, 1.4);
+        }
+      } else if (action.type==='LOCK_SEATING'){
+        console.info('[AI Director][decision]', action.type, action);
+        clearPlayerSeatTarget();
+        if (G.posture===Posture.SEATED) standUpFromSeat('ai-director');
+        showCenter('착석과 기상을 반복해 잠시 착석할 수 없습니다.', true, 1.6);
+      } else if (action.type==='EVENT_SLOT'){
         if (action.eventId==='sudden-stop'){
           triggerSuddenStopWarn();
           G.pendingSuddenStop = 3; // 12초 예고 → 15초 결과

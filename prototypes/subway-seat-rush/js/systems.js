@@ -126,7 +126,7 @@
       G.goodDeeds++;
       applyKindnessBuff();               // 즉시 회복 대신, 이후 체력 소모가 완화되는 선행 버프
       const s = G.occupiedSeat;
-      standUpFromSeat();
+      standUpFromSeat('yield');
       if (s && yn){ s.occupied=true; s.occupant=yn; yn.seated=true; yn.seatRef=s;
         placeCharacterOnSeat(yn.mesh, s); yn.x=yn.mesh.position.x; yn.z=yn.mesh.position.z; }
       showCenter('자리를 양보했습니다. 명예 +'+BALANCE.yieldSeatHonorReward, false, 1.8);

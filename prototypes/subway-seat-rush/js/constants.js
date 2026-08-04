@@ -94,6 +94,16 @@
   };
 
   /* ============ Game state / enums ============ */
+  const AI_DIRECTOR = {
+    longSeatDuration: 10,
+    rapidToggleWindow: 6,
+    rapidToggleTransitions: 3,
+    seatLockDuration: 5,
+    longSeatCooldown: 15,
+    rapidToggleCooldown: 12,
+    constraintMinGap: 3
+  };
+
   const GameState = {
     READY: 'READY', BOARDING: 'BOARDING', SEAT_RUSH: 'SEAT_RUSH',
     TRAVELING: 'TRAVELING', EVENT: 'EVENT', ARRIVAL: 'ARRIVAL',

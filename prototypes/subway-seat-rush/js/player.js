@@ -31,8 +31,24 @@
     character.scale.set(1,CAR.seatedScaleY,1);
   }
 
+  function recordDirectorPlayerAction(type, source){
+    const director = window.GameModules && window.GameModules.director;
+    if (director && director.recordPlayerAction){
+      director.recordPlayerAction({ type, source:source || 'manual', time:G.stageElapsed });
+    }
+  }
+
+  function isDirectorSeatingLocked(){
+    const director = window.GameModules && window.GameModules.director;
+    return !!(director && director.isSeatingLocked && director.isSeatingLocked(G.stageElapsed));
+  }
+
   // seat: 대상 좌석, msg: 착석 시 표시할 기본 메시지(양보받은 좌석이면 전용 메시지로 대체됨)
   function sitOnSeat(seat, msg){
+    if (isDirectorSeatingLocked()){
+      clearPlayerSeatTarget();
+      return false;
+    }
     const wasReserved = (seat.reservedFor==='player' || seat.reservedFor==='player-safety');
     seat.occupied=true; seat.occupant='player';
     seat.captureProgress=0; seat.npcProgress=0; seat.npcClaimantRef=null;
@@ -47,6 +63,7 @@
     G.seatCompetitionActive = false;
     G.contestedSeat = null;
     if (UI && UI.seatWrap) UI.seatWrap.classList.remove('show');
+    recordDirectorPlayerAction('SIT', 'manual');
 
     // 같은 좌석을 노리던 NPC는 목표를 잃고 다른 빈자리를 찾는다.
     npcs.forEach(n=>{ if(n.targetSeat===seat){ n.targetSeat=null; n.seatApproachPhase=null; } });
@@ -56,12 +73,13 @@
     VisualFX.flash('success');
     showCenter(wasReserved ? '양보받은 자리에 앉았습니다!' : (msg || '착석했습니다'), false, 1.4);
   }
-  function standUpFromSeat(){
+  function standUpFromSeat(source='manual'){
     if (G.occupiedSeat){ G.occupiedSeat.occupied=false; G.occupiedSeat.occupant=null; }
     const s = G.occupiedSeat; G.occupiedSeat=null;
     setPosture(Posture.STANDING);
     G.risingTimer = BALANCE.standUpDelay; // 일어나는 동안 짧은 지연(이동/공격 불가)
     if (s) player.position.set(s.x, 0, s.interactionPoint.z);
+    if (s) recordDirectorPlayerAction('STAND', source);
     AudioFX.play('stand');
     ensurePlayerSafetyResources();
   }
@@ -104,6 +122,10 @@
     if (G.posture!==Posture.STANDING){
       showCenter('먼저 일어나야 합니다. (E)', true, 1.0);
       return true;   // 클릭은 소비 — 가방 공격으로 넘기지 않음
+    }
+    if (isDirectorSeatingLocked()){
+      showCenter('AI 디렉터 제약으로 잠시 착석할 수 없습니다.', true, 1.0);
+      return true;
     }
     if (seat.occupied){
       showCenter('이미 누군가 앉아 있는 자리입니다.', true, 1.0);
@@ -253,7 +275,7 @@
 
   function forceStandFromVillain(v, distance){
     if(G.posture!==Posture.SEATED) return false;
-    standUpFromSeat();
+    standUpFromSeat('villain');
     G.risingTimer=0;
     knockPlayerFrom(v,distance||0.7,0.18);
     showCenter('충격으로 자리에서 밀려났습니다!',true,1.1);
