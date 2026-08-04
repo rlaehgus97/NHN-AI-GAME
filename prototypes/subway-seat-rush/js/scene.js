@@ -5,10 +5,11 @@
   function initScene() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xb4b8bd);
-    scene.fog = new THREE.Fog(0xb4b8bd, 20, 38);
+    scene.fog = new THREE.Fog(0xb4b8bd, 24, 46);
 
-    camera = new THREE.PerspectiveCamera(52, window.innerWidth/window.innerHeight, 0.1, 200);
-    camera.position.set(0, 9, 10);
+    // 차량이 넓어졌으므로 시야각과 카메라 높이를 함께 키운다.
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 200);
+    camera.position.set(0, 10.8, 11.8);
     camera.lookAt(0, 0.8, 0);
 
     renderer = new THREE.WebGLRenderer({ antialias:true });
@@ -21,30 +22,35 @@
     const hemi = new THREE.HemisphereLight(0xdfe3e8, 0x8b8f95, 0.55);
     scene.add(hemi);
     const dir = new THREE.DirectionalLight(0xffffff, 0.45);
-    dir.position.set(6, 14, 8);
+    dir.position.set(6, 16, 9);
     dir.castShadow = true;
     dir.shadow.mapSize.set(1024,1024);
-    dir.shadow.camera.left=-16; dir.shadow.camera.right=16;
-    dir.shadow.camera.top=12; dir.shadow.camera.bottom=-12;
+    dir.shadow.camera.left=-20; dir.shadow.camera.right=20;
+    dir.shadow.camera.top=14; dir.shadow.camera.bottom=-14;
     scene.add(dir);
     const amb = new THREE.AmbientLight(0xffffff, 0.22);
     scene.add(amb);
 
     clock = new THREE.Clock();
+
+    // 마우스 포인터 → 월드 좌표 변환용
+    raycaster = new THREE.Raycaster();
+    pointerNDC = new THREE.Vector2(0,0);
+    groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
   }
 
   /* ============ Subway environment ============ */
   function matClay(hex){ return new THREE.MeshStandardMaterial({ color:hex, roughness:0.95, metalness:0.0 }); }
 
   function buildEnvironment() {
-    const carLen = 15.4, carWidth = 4.6;
+    const carLen = CAR_LENGTH, carWidth = CAR_WIDTH;
 
     // 바닥 (차량 + 승강장)
     const floor = new THREE.Mesh(new THREE.BoxGeometry(carLen+1, 0.2, carWidth), matClay(0xececec));
     floor.position.set(0,-0.1,0); floor.receiveShadow = true; scene.add(floor);
 
-    const platform = new THREE.Mesh(new THREE.BoxGeometry(carLen+1, 0.2, 3.4), matClay(0xd2d5da));
-    platform.position.set(0,-0.1, CAR.farWallZ - 1.9); platform.receiveShadow = true; scene.add(platform);
+    const platform = new THREE.Mesh(new THREE.BoxGeometry(carLen+1, 0.2, 3.8), matClay(0xd2d5da));
+    platform.position.set(0,-0.1, CAR.farWallZ - 2.1); platform.receiveShadow = true; scene.add(platform);
 
     // 원경 벽 (far wall) — 문 구멍 자리는 두 조각으로 분리
     const wallMat = matClay(0xf3f3f1);
@@ -84,66 +90,136 @@
     scene.add(doorLeft); scene.add(doorRight);
 
     // 출구 표시(바닥 하이라이트) — 기본 숨김
-    exitMarker = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24),
+    exitMarker = new THREE.Mesh(new THREE.CircleGeometry(1.3, 24),
         new THREE.MeshStandardMaterial({ color:0x2ecc71, roughness:1, transparent:true, opacity:0.0 }));
     exitMarker.rotation.x = -Math.PI/2;
-    exitMarker.position.set(0, 0.02, CAR.farWallZ - 1.4);
+    exitMarker.position.set(0, 0.02, CAR.farWallZ - 1.6);
     scene.add(exitMarker);
 
     buildBenchesAndSeats();
     buildHandles();
   }
 
-  /* ============ Seats and handles ============ */
+  /* ============ Seats and handles ============
+     좌석 15석 구성
+       - 원경(문쪽) 벤치 8석: 문 앞 공간(±1.9)을 비우고 좌우 4석씩
+       - 근경(반대쪽) 벤치 7석: 문이 없으므로 균등 배치
+     BALANCE.seatCount(15)와 seatDefs 길이가 반드시 일치해야 한다.
+  ========================================================== */
   function buildBenchesAndSeats() {
-    // 벤치(양쪽 벽) — 낮은 형태로 카메라 시야 확보
+    const benchLen = CAR_LENGTH - 1.4;
     const benchMat = matClay(0xcfd3d8);
-    [ -1.75, 1.75 ].forEach(z=>{
-      const bench = new THREE.Mesh(new THREE.BoxGeometry(13.6, 0.45, 0.9), benchMat);
-      bench.position.set(0, 0.22, z); bench.receiveShadow=true; scene.add(bench);
-      const back = new THREE.Mesh(new THREE.BoxGeometry(13.6, 0.7, 0.18), benchMat);
-      back.position.set(0, 0.6, z + (z<0? -0.36 : 0.36)); scene.add(back);
+    [ -CAR.benchZ, CAR.benchZ ].forEach(z=>{
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(benchLen, 0.5, 1.05), benchMat);
+      bench.position.set(0, 0.25, z); bench.receiveShadow=true; scene.add(bench);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(benchLen, 0.75, 0.2), benchMat);
+      back.position.set(0, 0.63, z + (z<0? -0.42 : 0.42)); scene.add(back);
     });
 
-    // 좌석 10개: 원경(문쪽 벤치, 5석 — 문 앞은 비워둠) + 근경(반대쪽 벤치, 5석)
-    const seatDefs = [
-      { x:-6.4, z:-1.7, face: 1 },
-      { x:-4.6, z:-1.7, face: 1 },
-      { x:-2.8, z:-1.7, face: 1 },
-      { x: 2.8, z:-1.7, face: 1 },
-      { x: 4.6, z:-1.7, face: 1 },
-      { x:-6.4, z: 1.7, face:-1 },
-      { x:-3.2, z: 1.7, face:-1 },
-      { x: 0.0, z: 1.7, face:-1 },
-      { x: 3.2, z: 1.7, face:-1 },
-      { x: 6.4, z: 1.7, face:-1 }
-    ];
+    const farRow  = [-7.9, -6.2, -4.5, -2.8, 2.8, 4.5, 6.2, 7.9];   // 문쪽 벤치 8석
+    const nearRow = [-7.2, -4.8, -2.4, 0.0, 2.4, 4.8, 7.2];          // 반대쪽 벤치 7석
+    const seatDefs = [];
+    farRow.forEach(x=> seatDefs.push({ x, z:-CAR.seatZ, face: 1 }));
+    nearRow.forEach(x=> seatDefs.push({ x, z: CAR.seatZ, face:-1 }));
+
     const seatMat = matClay(0x9aa0a8);
-    seatDefs.forEach((d,i)=>{
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 0.8), seatMat.clone());
-      mesh.position.set(d.x, 0.5, d.z); scene.add(mesh);
-      const point = { x: d.x, z: d.z + d.face*0.95 }; // 통로쪽 상호작용 위치
-      seats.push({
-        mesh, x:d.x, z:d.z, face:d.face, occupied:false, occupant:null,
+    seatPickables.length = 0;
+
+    seatDefs.forEach(d=>{
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.14, 0.85), seatMat.clone());
+      mesh.position.set(d.x, 0.55, d.z); mesh.receiveShadow=true; scene.add(mesh);
+
+      // 빈자리 강조용 평면(좌석 위) — 색/투명도를 매 프레임 갱신
+      const highlight = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.58, 0.94),
+        new THREE.MeshBasicMaterial({ color:0xfff2c4, transparent:true, opacity:0, depthWrite:false })
+      );
+      highlight.rotation.x = -Math.PI/2;
+      highlight.position.set(d.x, 0.64, d.z);
+      scene.add(highlight);
+
+      // 클릭 판정용 투명 박스(좌석보다 조금 크게 잡아 클릭을 쉽게 함)
+      const pick = new THREE.Mesh(
+        new THREE.BoxGeometry(1.72, 1.25, 1.5),
+        new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false })
+      );
+      pick.position.set(d.x, 0.62, d.z + d.face*0.3);
+      scene.add(pick);
+
+      const point = { x: d.x, z: d.z + d.face*CAR.seatInteractOffset }; // 통로쪽 상호작용 위치
+      const seat = {
+        mesh, highlight, pick, x:d.x, z:d.z, face:d.face, occupied:false, occupant:null,
         interactionPoint:point,
-        captureProgress:0,      // 플레이어 점유 게이지 (0~100)
+        captureProgress:0,      // 플레이어 점유 게이지 (0~100, 경쟁 중에만 사용)
         npcProgress:0,          // 현재 경쟁 중인 NPC의 점유 게이지 (0~100)
         npcClaimantRef:null,    // npcProgress를 채우고 있는 NPC 참조
         reservedFor:null,       // 'player' — 빌런 퇴치 보상으로 예약된 좌석
         reservedTimer:0
-      });
+      };
+      pick.userData.seatRef = seat;
+      mesh.userData.seatRef = seat;
+      seats.push(seat);
+      seatPickables.push(pick);
     });
   }
 
   function buildHandles() {
     const ringMat = matClay(0xe0a94b);
-    [ -4.5, -1.5, 1.5, 4.5 ].forEach(x=>{
+    [ -7.5, -4.5, -1.5, 1.5, 4.5, 7.5 ].forEach(x=>{
       const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.18,0.05,8,16), ringMat.clone());
-      mesh.position.set(x, 2.1, 0); mesh.rotation.x = Math.PI/2 * 0; scene.add(mesh);
+      mesh.position.set(x, 2.1, 0); scene.add(mesh);
       // 손잡이 끈
       const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.4,6), matClay(0xcccccc));
       strap.position.set(x, 2.35, 0); scene.add(strap);
       handles.push({ mesh, x, z:0, occupied:false, occupant:null });
+    });
+  }
+
+  /* ============ 좌석 하이라이트 ============
+     상태별 색 구분
+       점유됨          : 표시 없음
+       경쟁 중         : 빨강
+       플레이어 선택   : 파랑
+       플레이어 예약   : 초록 (빌런 퇴치 / 선행 보상)
+       NPC가 노리는 중 : 주황
+       마우스 hover    : 밝은 노랑
+       일반 빈자리     : 옅은 크림색
+  =========================================== */
+  function isSeatTargetedByNPC(seat){
+    for (let i=0;i<npcs.length;i++){
+      const n = npcs[i];
+      if (!n.seated && !n.disembarking && n.targetSeat===seat) return true;
+    }
+    return seat.npcClaimantRef ? !seat.npcClaimantRef.seated : false;
+  }
+
+  function seatHighlightStyle(seat){
+    if (seat.occupied) return null;
+    if (G.seatCompetitionActive && G.contestedSeat===seat)
+      return { color:0xff5e57, opacity:0.75, emissive:0x6b1f1b };
+    if (G.targetSeat===seat)
+      return { color:0x4aa3ff, opacity:0.68, emissive:0x11395e };
+    if (seat.reservedFor==='player')
+      return { color:0x2ecc71, opacity:0.66, emissive:0x13512b };
+    if (isSeatTargetedByNPC(seat))
+      return { color:0xff9f43, opacity:0.52, emissive:0x53300e };
+    if (G.hoveredSeat===seat)
+      return { color:0xffe08a, opacity:0.62, emissive:0x4d3d16 };
+    return { color:0xfff2c4, opacity:0.30, emissive:0x272009 };
+  }
+
+  function updateSeatHighlights(){
+    const pulse = 0.86 + Math.sin(performance.now()*0.005)*0.14;
+    seats.forEach(seat=>{
+      const style = seatHighlightStyle(seat);
+      if (!style){
+        seat.highlight.material.opacity = 0;
+        seat.mesh.material.emissive.setHex(0x000000);
+        return;
+      }
+      seat.highlight.material.color.setHex(style.color);
+      seat.highlight.material.opacity = style.opacity*pulse;
+      seat.mesh.material.emissive.setHex(style.emissive);
     });
   }
 

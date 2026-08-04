@@ -1,8 +1,8 @@
-import { MovementSystem } from "./movement-system.js?v=stage-systems-4";
-import { SeatCompetition } from "./seat-competition.js?v=stage-systems-4";
-import { StationSystem } from "./station-system.js?v=stage-systems-4";
-import { STAGE_ONE } from "./stage-config.js?v=stage-systems-4";
-import { EventDirector } from "./event-director.js?v=stage-systems-4";
+import { MovementSystem } from "./movement-system.js?v=mouse-seat-2";
+import { SeatCompetition } from "./seat-competition.js?v=mouse-seat-2";
+import { StationSystem } from "./station-system.js?v=mouse-seat-2";
+import { STAGE_ONE } from "./stage-config.js?v=mouse-seat-2";
+import { EventDirector } from "./event-director.js?v=mouse-seat-2";
 
 const director = new EventDirector(STAGE_ONE);
 

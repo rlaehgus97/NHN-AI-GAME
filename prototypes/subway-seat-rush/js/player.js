@@ -1,5 +1,5 @@
 "use strict";
-/* player.js — 플레이어 이동, 자세(서기/앉기/손잡이), 상호작용, 가방 공격 */
+/* player.js — 플레이어 이동(마우스 포인터 방향), 자세, 좌석 클릭/자동 이동, 가방 공격 */
 
   /* ============ Interaction system ============ */
   function dist2(ax,az,bx,bz){ const dx=ax-bx,dz=az-bz; return dx*dx+dz*dz; }
@@ -40,6 +40,17 @@
     G.occupiedSeat = seat;
     setPosture(Posture.SEATED);
     placeCharacterOnSeat(player, seat);
+
+    // 착석하면 선택/경쟁 상태는 모두 종료된다.
+    G.targetSeat = null;
+    G.autoMovingToSeat = false;
+    G.seatCompetitionActive = false;
+    G.contestedSeat = null;
+    if (UI && UI.seatWrap) UI.seatWrap.classList.remove('show');
+
+    // 같은 좌석을 노리던 NPC는 목표를 잃고 다른 빈자리를 찾는다.
+    npcs.forEach(n=>{ if(n.targetSeat===seat){ n.targetSeat=null; n.seatApproachPhase=null; } });
+
     AudioFX.play('sit');
     VisualFX.burst(seat.x, 1.05, seat.z, 0xf6c344, 12);
     VisualFX.flash('success');
@@ -56,6 +67,7 @@
   }
   function grabHandle(h){
     h.occupied=true; h.occupant='player'; G.heldHandle=h;
+    clearPlayerSeatTarget();
     setPosture(Posture.HOLDING_HANDLE);
     player.position.set(h.x, 0, 0);
   }
@@ -75,6 +87,50 @@
     }
   }
 
+  /* ============ 마우스 클릭 처리 (좌석 → 빌런 → 바닥 순서) ============ */
+
+  // 이 상태에서만 게임 월드에 대한 마우스 입력을 허용한다.
+  function isWorldInputAllowed(){
+    return G.state===GameState.BOARDING || G.state===GameState.SEAT_RUSH ||
+           G.state===GameState.TRAVELING || G.state===GameState.ARRIVAL;
+  }
+
+  // 좌석 클릭: 목표 좌석으로 지정하고, 이미 충분히 가까우면 즉시 착석 판정을 맡긴다.
+  function handleSeatClick(seat){
+    if (!seat) return false;
+    // 목적지 도착 후에는 좌석을 고를 수 없다(하차가 우선). 클릭은 이동 처리로 넘긴다.
+    if (G.state===GameState.ARRIVAL) return false;
+    if (G.posture!==Posture.STANDING){
+      showCenter('먼저 일어나야 합니다. (E)', true, 1.0);
+      return true;   // 클릭은 소비 — 가방 공격으로 넘기지 않음
+    }
+    if (seat.occupied){
+      showCenter('이미 누군가 앉아 있는 자리입니다.', true, 1.0);
+      return true;
+    }
+    if (seat.reservedFor && seat.reservedFor!=='player' && seat.reservedFor!=='player-safety'){
+      return true;
+    }
+    const d = Math.hypot(player.position.x-seat.interactionPoint.x,
+                         player.position.z-seat.interactionPoint.z);
+    if (d > BALANCE.seatClickMaxDistance) return true;
+
+    // 다른 좌석을 선택하면 이전 선택/경쟁 상태는 즉시 해제된다.
+    if (G.targetSeat && G.targetSeat!==seat) clearPlayerSeatTarget();
+    else if (G.seatCompetitionActive && G.contestedSeat!==seat) endSeatCompetition();
+
+    G.targetSeat = seat;
+    G.autoMovingToSeat = true;
+    return true;
+  }
+
+  // 바닥 클릭: 좌석 자동 이동을 취소하고 포인터 방향 이동으로 전환
+  function handleGroundClick(){
+    clearPlayerSeatTarget();
+    G.pointerHeld = true;
+    leftMouseDown = true;
+  }
+
   /* ============ Bag attack: WINDUP → STRIKE → RECOVERY ============ */
   function tryBagAttack(){
     if (G.state!==GameState.TRAVELING && G.state!==GameState.ARRIVAL) return;
@@ -82,6 +138,8 @@
     if (G.risingTimer>0) return;                 // 일어나는 중엔 공격 불가
     if (G.bagAttack.phase!=='IDLE') return;       // 이전 모션이 끝나야 재공격
     if (G.bagCooldown>0 || G.stun>0) return;
+    // 공격을 시작하면 좌석 자동 이동은 취소된다.
+    clearPlayerSeatTarget();
     G.bagCooldown = BALANCE.bagAttackCooldown;
     G.bagAttack.phase = 'WINDUP';
     G.bagAttack.timer = 0;
@@ -151,7 +209,12 @@
     }
   }
 
+  // dir은 THREE.Vector2(x, y)이며 y가 z축 성분이다.
+  // 기존 코드가 dir.z(존재하지 않음)를 참조해 v.z가 NaN이 되고,
+  // 맞은 빌런이 화면에서 사라지던 문제를 방지한다.
   function hitVillain(v, dir){
+    const dirX = dir.x;
+    const dirZ = (dir.z !== undefined) ? dir.z : dir.y;
     v.hp -= 1;
     v.hitFlash = 0.25;
     v.hitStop = BALANCE.hitStopDuration; // 짧은 스케일 펀치 연출용(전체 로직은 멈추지 않음)
@@ -159,7 +222,7 @@
     v.swingHit = false; v.telegraph = 0; // 예고/스윙 도중 맞으면 그대로 취소되어 HIT으로 전환됨
     // 넉백: 취객은 더 크게 밀려남
     const kb = (v.type==='drunk') ? {x:1.6, z:1.0} : {x:0.7, z:0.5};
-    v.x += dir.x*kb.x; v.z += dir.z*kb.z;
+    v.x += dirX*kb.x; v.z += dirZ*kb.z;
     v.z = THREE.MathUtils.clamp(v.z, -1.2, 1.2);
     v.x = THREE.MathUtils.clamp(v.x, CAR.xMin, CAR.xMax);
     if (v.hp<=0){ defeatVillain(v); }
@@ -216,16 +279,16 @@
     return { x, z };
   }
 
-  // 플레이어-NPC 간단 밀어내기
+  // 플레이어-NPC 간단 밀어내기 (통로가 넓어진 만큼 최소 간격도 조금 키움)
   function resolveNPCPush(dt){
     const px=player.position.x, pz=player.position.z;
     npcs.forEach(n=>{
       if (n.seated) return;
       const dx=px-n.mesh.position.x, dz=pz-n.mesh.position.z;
       const d=Math.hypot(dx,dz);
-      const min=0.75;
+      const min=0.88;
       if (d<min && d>0.001){
-        const push=Math.min((min-d)/2,1.1*dt);
+        const push=Math.min((min-d)/2,1.3*dt);
         n.mesh.position.x -= dx/d*push;
         n.mesh.position.z -= dz/d*push;
         n.x=n.mesh.position.x; n.z=n.mesh.position.z;
@@ -233,11 +296,69 @@
     });
   }
 
+  /* ============ 마우스 포인터 이동 ============ */
+  // 이동이 가능한 상황인지 판정 (착석/손잡이/경직/넉백/기립중/경쟁중/오버레이 상태 제외)
+  function canPlayerMove(){
+    if (G.posture!==Posture.STANDING) return false;
+    if (G.stun>0 || G.risingTimer>0 || G.knockback.timer>0) return false;
+    if (G.seatCompetitionActive) return false;   // 경쟁 중에는 제자리에서 SPACE 연타
+    return isWorldInputAllowed();
+  }
+
+  // 포인터 방향 이동 + 좌석 자동 이동. 실제로 이동했는지 여부를 반환한다.
+  function updatePlayerMovement(dt){
+    if (!canPlayerMove()) return false;
+
+    const speedMul = getPlayerHazardSpeedMultiplier();
+    const speed = (keys['shift'] ? BALANCE.dashSpeed : BALANCE.moveSpeed) * speedMul;
+
+    let mx=0, mz=0, moving=false;
+
+    if (G.autoMovingToSeat && G.targetSeat){
+      // 선택한 좌석의 상호작용 지점으로 자동 이동
+      const t = G.targetSeat.interactionPoint;
+      const dx = t.x - player.position.x, dz = t.z - player.position.z;
+      const d = Math.hypot(dx,dz);
+      if (d > BALANCE.seatArriveDistance*0.75){ mx=dx/d; mz=dz/d; moving=true; }
+    } else if (G.pointerHeld && G.pointerWorld.valid){
+      // 마우스를 누르고 있는 동안 포인터 방향으로 이동
+      const dx = G.pointerWorld.x - player.position.x, dz = G.pointerWorld.z - player.position.z;
+      const d = Math.hypot(dx,dz);
+      if (d > BALANCE.pointerMoveDeadzone){ mx=dx/d; mz=dz/d; moving=true; }
+    }
+
+    if (moving){
+      const nx = player.position.x + mx*speed*dt;
+      const nz = player.position.z + mz*speed*dt;
+      const r = resolvePlayerBounds(nx,nz);
+      player.position.x = r.x; player.position.z = r.z;
+      G.facing.set(mx,mz);
+      player.rotation.y = Math.atan2(mx,mz);   // 회전 방향 = 실제 이동 방향
+      return true;
+    }
+
+    // 멈춰 있을 때도 포인터를 바라본다 (공격 방향과 일치)
+    if (!G.autoMovingToSeat && G.pointerWorld.valid){
+      const dx = G.pointerWorld.x - player.position.x, dz = G.pointerWorld.z - player.position.z;
+      const d = Math.hypot(dx,dz);
+      if (d > BALANCE.pointerFaceDeadzone){
+        G.facing.set(dx/d, dz/d);
+        player.rotation.y = Math.atan2(dx,dz);
+      }
+    }
+    return false;
+  }
+
   /* ============ Player update ============ */
   function updatePlayer(dt){
     if (G.risingTimer>0) G.risingTimer = Math.max(0, G.risingTimer-dt);
 
-    // 넉백(튕겨나감): WASD 입력보다 우선 적용되며, 짧은 시간 동안 감속하며 밀려난다
+    // 경직/넉백 상태에서는 좌석 선택과 자동 이동을 즉시 취소한다.
+    if ((G.stun>0 || G.knockback.timer>0) && (G.targetSeat || G.seatCompetitionActive)){
+      clearPlayerSeatTarget();
+    }
+
+    // 넉백(튕겨나감): 마우스 입력보다 우선 적용되며, 짧은 시간 동안 감속하며 밀려난다
     if (G.knockback.timer>0){
       const remainingFrac = G.knockback.timer / BALANCE.knockbackDuration;
       const speed = (G.knockback.distance / BALANCE.knockbackDuration) * 2 * remainingFrac; // ease-out
@@ -248,28 +369,23 @@
       G.knockback.timer = Math.max(0, G.knockback.timer - dt);
     }
 
-    // 입력 잠금 상태
-    const canMove = (G.posture===Posture.STANDING) && G.stun<=0 && G.risingTimer<=0 &&
-      (G.state===GameState.BOARDING || G.state===GameState.SEAT_RUSH ||
-       G.state===GameState.TRAVELING || G.state===GameState.ARRIVAL);
+    const moved = updatePlayerMovement(dt);
 
-    let mx=0, mz=0;
-    if (canMove){
-      if (keys['w']||keys['arrowup']) mz-=1;
-      if (keys['s']||keys['arrowdown']) mz+=1;
-      if (keys['a']||keys['arrowleft']) mx-=1;
-      if (keys['d']||keys['arrowright']) mx+=1;
-    }
-    if (mx||mz){
-      const len=Math.hypot(mx,mz); mx/=len; mz/=len;
-      const spd = (keys['shift']? BALANCE.dashSpeed : BALANCE.moveSpeed)*getPlayerHazardSpeedMultiplier();
-      let nx=player.position.x+mx*spd*dt;
-      let nz=player.position.z+mz*spd*dt;
-      const r=resolvePlayerBounds(nx,nz);
-      player.position.x=r.x; player.position.z=r.z;
-      G.facing.set(mx,mz);
-      // 바라보는 방향
-      player.rotation.y = Math.atan2(mx, mz);
+    if(G.surgeTimer>0){
+      G.surgeTimer=Math.max(0,G.surgeTimer-dt);
+      if(G.posture===Posture.STANDING){
+        // 대량 하차 인파는 벽(-z 직선)이 아니라 실제 출입문 중앙으로 수렴한다.
+        const doorTargetX=0;
+        const doorTargetZ=CAR.platformZ-0.6;
+        const surgeDX=doorTargetX-player.position.x;
+        const surgeDZ=doorTargetZ-player.position.z;
+        const surgeDistance=Math.hypot(surgeDX,surgeDZ)||1;
+        const surgeSpeed=1.3;
+        const nextX=player.position.x+surgeDX/surgeDistance*surgeSpeed*dt;
+        const nextZ=player.position.z+surgeDZ/surgeDistance*surgeSpeed*dt;
+        const surgeBounds=resolvePlayerBounds(nextX,nextZ);
+        player.position.x=surgeBounds.x; player.position.z=surgeBounds.z;
+      }
     }
 
     if(G.surgeTimer>0){
@@ -299,16 +415,15 @@
     if (G.posture===Posture.SEATED && G.occupiedSeat){
       // 걷기 바운스 복귀 코드가 착석 높이를 0으로 내려버리지 않도록 포즈를 고정한다.
       placeCharacterOnSeat(player, G.occupiedSeat);
-    } else if ((mx||mz) && canMove){
+    } else if (moved){
       player.position.y = Math.abs(Math.sin(performance.now()*0.012))*0.05;
     } else {
       player.position.y = Math.max(0, player.position.y-dt*0.5);
     }
   }
 
-  /* ============ Interaction prompt (TRAVELING/ARRIVAL) ============ */
+  /* ============ Interaction prompt ============ */
   function updateInteractPrompt(){
-    if (G.state===GameState.SEAT_RUSH) return; // seatRush에서 처리
     const px=player.position.x, pz=player.position.z;
 
     if (G.state===GameState.ARRIVAL){
@@ -318,9 +433,13 @@
         return;
       }
       if (G.posture!==Posture.STANDING) setInteract('E: 일어나서 문으로 이동하세요');
-      else setInteract('문으로 이동하세요! (출구로 하차)');
+      else setInteract('문 방향을 클릭해 이동하세요! (출구로 하차)');
       return;
     }
+
+    if (G.seatCompetitionActive){ setInteract('SPACE 연타! 경쟁자보다 먼저 자리를 차지하세요'); return; }
+    if (G.state===GameState.BOARDING){ setInteract('마우스를 누른 채 차량 안으로 이동하세요'); return; }
+    if (G.state===GameState.SEAT_RUSH){ setInteract('밝게 표시된 빈 좌석을 클릭하세요'); return; }
     if (G.state!==GameState.TRAVELING){ setInteract(''); return; }
     if (G.risingTimer>0){ setInteract('일어나는 중...'); return; }
 
@@ -330,10 +449,10 @@
     // STANDING
     let nearVillain=false;
     villains.forEach(v=>{ if(!v.defeated && Math.hypot(v.x-px,v.z-pz)<2.4) nearVillain=true; });
-    const seat = nearestEmptySeat(px,pz,1.2);
     const handle = nearestFreeHandle(px,pz,1.1);
-    if (nearVillain) setInteract('F / 좌클릭: 가방 휘두르기');
-    else if (seat) setInteract(''); // 좌석은 하단 게이지(SPACE 연타)가 안내를 대신함
+    if (G.autoMovingToSeat && G.targetSeat) setInteract('선택한 좌석으로 이동 중...');
+    else if (nearVillain) setInteract('F / 빌런 클릭: 가방 휘두르기');
+    else if (G.hoveredSeat) setInteract('클릭: 이 빈자리에 앉기');
     else if (handle) setInteract('E: 손잡이 잡기');
     else setInteract('');
   }
@@ -347,7 +466,7 @@
     if(tryClearDoorBlocker()) return;
     if (G.state===GameState.TRAVELING){
       if(hasNearbyUtilityVillain()) return;
-      // 좌석은 E로 즉시 앉지 않고 항상 SPACE 연타(좌석 게이지)로만 앉을 수 있음
+      // 좌석은 E가 아니라 "클릭"으로 앉는다. E는 손잡이 전용.
       const handle = nearestFreeHandle(px,pz,1.1);
       if (handle){ grabHandle(handle); showCenter('손잡이를 잡았습니다', false, 1.0); return; }
     }

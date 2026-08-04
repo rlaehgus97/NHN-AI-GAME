@@ -14,9 +14,9 @@ function makeHazardDisc(x,z,radius,color,opacity=.28){
 
 function spawnStaticStressZone(){
   const choices=[
-    {type:'video',label:'큰 소리!',x:-4.7,z:-0.75,color:0xff4d6d},
-    {type:'food',label:'음식!',x:3.4,z:0.72,color:0xff9f43},
-    {type:'odor',label:'악취!',x:5.6,z:-0.72,color:0x9b59b6}
+    {type:'video',label:'큰 소리!',x:-5.8,z:-0.95,color:0xff4d6d},
+    {type:'food',label:'음식!',x:4.2,z:0.92,color:0xff9f43},
+    {type:'odor',label:'악취!',x:6.9,z:-0.92,color:0x9b59b6}
   ];
   const data=choices[Math.floor(Math.random()*choices.length)];
   const mesh=makeHazardDisc(data.x,data.z,1.45,data.color,.22);
@@ -49,11 +49,11 @@ function clearEnvironmentHazards(){
 function showCrowdWarningZone(){
   if(G.crowdZoneMesh) scene.remove(G.crowdZoneMesh);
   const mesh=new THREE.Mesh(
-    new THREE.PlaneGeometry(5.6,1.5),
+    new THREE.PlaneGeometry(6.8,2.1),
     new THREE.MeshBasicMaterial({color:0xe74c3c,transparent:true,opacity:.18,depthWrite:false})
   );
   mesh.rotation.x=-Math.PI/2;
-  mesh.position.set(0,.03,-.55);
+  mesh.position.set(0,.03,-.7);
   scene.add(mesh);
   G.crowdZoneMesh=mesh;
 }
@@ -111,7 +111,7 @@ function updateEnvironmentHazards(dt){
   if(G.crowdPressureTimer>0){
     G.crowdPressureTimer=Math.max(0,G.crowdPressureTimer-dt);
     const inCrowdZone=G.posture===Posture.STANDING &&
-      Math.abs(player.position.x)<2.8 && player.position.z<0.05;
+      Math.abs(player.position.x)<3.2 && player.position.z<0.05;
     if(inCrowdZone){
       G.crowdExposure=Math.min(2,G.crowdExposure+dt);
       if(G.crowdExposure>=0.65) G.encircled=true;
@@ -169,10 +169,10 @@ function resolveUtilityVillain(v){
 function spawnDoorBlocker(){
   if(G.doorBlocker) return;
   const mesh=makeCharacter(0x34495e,0xe8c39e);
-  mesh.position.set(0,0,CAR.farWallZ+0.55);
+  mesh.position.set(0,0,CAR.farWallZ+0.7);
   mesh.add(makeTag('문 앞 버티기','#34495e'));
   scene.add(mesh);
-  G.doorBlocker={mesh,x:0,z:CAR.farWallZ+0.55,cleared:false,pressure:0};
+  G.doorBlocker={mesh,x:0,z:CAR.farWallZ+0.7,cleared:false,pressure:0};
   showCenter('문 앞을 막고 버티는 승객이 나타났습니다!',true,2.2);
 }
 
@@ -181,7 +181,7 @@ function tryClearDoorBlocker(){
   if(!blocker || blocker.cleared || G.posture!==Posture.STANDING) return false;
   if(Math.hypot(player.position.x-blocker.x,player.position.z-blocker.z)>1.35) return false;
   blocker.cleared=true;
-  blocker.mesh.position.x=CAR.doorX+1.1;
+  blocker.mesh.position.x=CAR.doorX+1.3;
   blocker.x=blocker.mesh.position.x;
   addHonor(5); G.goodDeeds++;
   showCenter('통행을 위해 승객을 문 옆으로 치웠습니다.',false,1.8);

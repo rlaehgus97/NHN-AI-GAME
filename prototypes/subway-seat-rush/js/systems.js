@@ -73,7 +73,7 @@
     candidateSeat.reservedFor = 'player';
     candidateSeat.reservedTimer = BALANCE.seatReservationDuration;
 
-    showCenter(introText+'\n승객이 자리를 양보했습니다.', false, 2.4);
+    showCenter(introText+'\n승객이 양보한 초록색 자리를 클릭하세요!', false, 2.4);
   }
 
   // 예약된 좌석의 남은 시간을 갱신하고, 시간이 지나면 예약 해제(다른 NPC도 다시 앉을 수 있게 됨)
@@ -102,6 +102,7 @@
   =============================================================================== */
   function openYieldEvent(){
     G.flags.yieldDone = true;
+    clearPlayerSeatTarget();
     G.eventReturnState = G.state;
     G.state = GameState.EVENT;
     // 양보 NPC 등장 (플레이어 앞)
