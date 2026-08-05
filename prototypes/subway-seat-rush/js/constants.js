@@ -118,10 +118,12 @@
   const CAR_LENGTH = 19.0;   // 차량 전체 길이 (scene.js와 공유)
   const CAR_WIDTH  = 6.0;    // 차량 전체 폭 (scene.js와 공유)
 
-  const CAR = { xMin:-8.6, xMax:8.6, aisleZMin:-1.70, aisleZMax:1.70,
+  const CAR = { xMin:-8.6, xMax:8.6, playerXMin:-15.35, playerXMax:15.35,
+                leftConnectorX:-14.20, connectorX:14.20, connectorHalfWidth:0.75,
+                aisleZMin:-1.70, aisleZMax:1.70,
                 doorX:1.9, platformZ:-4.6, farWallZ:-2.9, nearWallZ:2.9,
-                benchZ: 2.40,         // 벤치 중심 z (양쪽 대칭)
-                seatZ: 2.35,          // 좌석 상판 중심 z (양쪽 대칭)
+                benchZ: 1.75,         // GLB 모델 벤치 중심 z (양쪽 대칭)
+                seatZ: 1.70,          // GLB 모델 좌석 상판 중심 z (양쪽 대칭)
                 seatInteractOffset: 0.95, // 좌석 → 통로쪽 상호작용 지점까지 거리
                 seatSitY: 0.68,       // 캐릭터 하체가 좌석 상판에 묻히지 않는 착석 높이
                 seatSitOffset: 0.10,  // NPC와 플레이어가 함께 쓰는 착석 중심 위치

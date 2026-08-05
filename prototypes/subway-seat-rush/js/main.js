@@ -420,7 +420,7 @@
     let sx=0, sz=0;
     if (G.shake>0){ G.shake-=dt*1.5; const s=Math.max(0,G.shake);
       sx=(Math.random()-0.5)*s; sz=(Math.random()-0.5)*s; }
-    const camX = THREE.MathUtils.clamp(p.x, -4.8, 4.8);
+    const camX = THREE.MathUtils.clamp(p.x, (CAR.playerXMin || CAR.xMin)+1.7, (CAR.playerXMax || CAR.xMax)-1.7);
     const tx = camX + sx;
     camera.position.x += (tx - camera.position.x)*Math.min(1,dt*4);
     camera.position.y = 11.5; // initScene()과 동일 — 문쪽 벽 근처 캐릭터가 벽에 가려 안 보이던 문제 보완
@@ -448,6 +448,7 @@
     updateSeatHighlights();
     VisualFX.update(dt);
     updateCamera(dt);
+    updateMovingExterior(dt);
 
     // 중앙 메시지 페이드
     if (centerTimer>0){ centerTimer-=dt; if(centerTimer<=0){ advanceCenterQueue(); } }

@@ -2,15 +2,30 @@
 /* entities.js — NPC 승객 및 빌런(진상 승객) 스폰 로직 */
 
   /* ============ NPC passengers ============ */
-  // Fall Guys풍 채도 높은 원색 팔레트 — competitor NPC마다 개체별로 무작위 배정해 다채로운 군중을 만든다.
-  const NPC_COLOR_PALETTE = [0xff5e5e,0xffb347,0xffe066,0x8ce99a,0x63e6be,0x66d9e8,0x74c0fc,0xb197fc,0xf783ac,0xffa8a8];
+  // 한국 출퇴근길 승객을 연상시키는 절제된 옷·피부·머리 팔레트.
+  // 시뮬레이션 상태와 무관한 순수 렌더 프리셋이며, 젤리빈 실루엣은 그대로 유지한다.
+  const NPC_OUTFIT_PALETTE = [
+    { color:0x27364a, outfit:'suit' }, { color:0x3f4652, outfit:'suit' },
+    { color:0x5a4638, outfit:'suit' }, { color:0x233044, outfit:'office' },
+    { color:0x74808c, outfit:'office' }, { color:0x8b6f5a, outfit:'cardigan' },
+    { color:0x496a63, outfit:'casual' }, { color:0x8a5361, outfit:'casual' },
+    { color:0x596b8a, outfit:'casual' }, { color:0x6d625b, outfit:'cardigan' }
+  ];
+  // 플레이어 피부색(0xf1c9a5)을 중심으로 밝기 차이만 아주 작게 둔다.
+  const NPC_SKIN_PALETTE = [0xf1c9a5, 0xf4cfb1, 0xefc3a2, 0xf6d3b8, 0xebbd9b];
+  const NPC_HAIR_PALETTE = [0x171513, 0x25201d, 0x332821, 0x111214];
+  const NPC_HAIR_STYLES = ['part','short','bob','bun'];
 
   // kind: 'competitor' (좌석 경쟁 NPC). 초기 탑승 방해를 줄이기 위해 배경(ambient) NPC는 스폰하지 않음.
   function spawnNPC(kind, x, z) {
-    const color = kind==='competitor'
-      ? NPC_COLOR_PALETTE[Math.floor(Math.random()*NPC_COLOR_PALETTE.length)]
-      : 0xa9adb2;
-    const mesh = createCharacterGroup(color, color);
+    const outfit = NPC_OUTFIT_PALETTE[Math.floor(Math.random()*NPC_OUTFIT_PALETTE.length)];
+    const skin = NPC_SKIN_PALETTE[Math.floor(Math.random()*NPC_SKIN_PALETTE.length)];
+    const appearance = {
+      outfit: outfit.outfit,
+      hairColor: NPC_HAIR_PALETTE[Math.floor(Math.random()*NPC_HAIR_PALETTE.length)],
+      hairStyle: NPC_HAIR_STYLES[Math.floor(Math.random()*NPC_HAIR_STYLES.length)]
+    };
+    const mesh = createCharacterGroup(outfit.color, skin, appearance);
     mesh.position.set(x, 0, z);
     scene.add(mesh);
 

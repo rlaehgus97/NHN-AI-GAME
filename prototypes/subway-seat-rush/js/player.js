@@ -320,7 +320,20 @@
   /* ============ Collision handling ============ */
   // 문이 닫혀있을 때는 플레이어가 현재 있는 쪽(승강장/차량)의 경계를 벗어날 수 없음
   function resolvePlayerBounds(x, z){
-    x = THREE.MathUtils.clamp(x, CAR.xMin, CAR.xMax);
+    x = THREE.MathUtils.clamp(x, CAR.playerXMin || CAR.xMin, CAR.playerXMax || CAR.xMax);
+    // 양쪽 연결부 격벽은 중앙 관통문에서만 통과할 수 있다. NPC는 기존 객실에 머물고 플레이어만
+    // 연결 통로를 살펴볼 수 있도록 플레이어 경계만 대칭으로 확장한다.
+    const connectorX=CAR.connectorX || CAR.xMax;
+    const leftConnectorX=CAR.leftConnectorX || CAR.xMin;
+    const canUseConnector=Math.abs(z)<(CAR.connectorHalfWidth || 0.75);
+    const crossesRightConnector=(player.position.x<=connectorX && x>connectorX) ||
+      (player.position.x>=connectorX && x<connectorX);
+    if (crossesRightConnector && !canUseConnector)
+      x=player.position.x<=connectorX ? connectorX-0.03 : connectorX+0.03;
+    const crossesLeftConnector=(player.position.x>=leftConnectorX && x<leftConnectorX) ||
+      (player.position.x<=leftConnectorX && x>leftConnectorX);
+    if (crossesLeftConnector && !canUseConnector)
+      x=player.position.x>=leftConnectorX ? leftConnectorX+0.03 : leftConnectorX-0.03;
     const inDoorX = Math.abs(x) < CAR.doorX;
     if (G.doorsOpen && inDoorX){
       // 문 열림 + 문 앞: 승강장부터 차량 안쪽까지 자유롭게 왕래 가능

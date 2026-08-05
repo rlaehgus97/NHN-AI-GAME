@@ -102,6 +102,8 @@
   // 끝(2.76)보다 살짝 위로 올려서 창문·문·기둥은 완전한 형태로 두고, 그 위 지붕 잔여물만 잘라낸다.
   const MODEL_CLIP_Y = 2.8;
   const modelClipPlane = new THREE.Plane(new THREE.Vector3(0,-1,0), MODEL_CLIP_Y);
+  const modelRightHalfPlane = new THREE.Plane(new THREE.Vector3(1,0,0), 0);
+  const modelLeftHalfPlane = new THREE.Plane(new THREE.Vector3(-1,0,0), 0);
 
   // 실제 모델이 로드되면 가려질 프리미티브 "껍데기"(벽/바닥/장식/좌석/벤치) 메시 목록.
   // 문/손잡이처럼 위치가 이동/애니메이션되는 오브젝트만 여기 넣지 않는다 — 좌석은 이제
@@ -111,41 +113,60 @@
     const gm = window.GameModules;
     if (!gm || !gm.loadGLTF) return;
     gm.loadGLTF(SUBWAY_MODEL.url).then(gltf => {
-      const model = gltf.scene;
-      model.scale.set(SUBWAY_MODEL.scale.x, SUBWAY_MODEL.scale.y, SUBWAY_MODEL.scale.z);
-      model.position.set(SUBWAY_MODEL.offset.x, SUBWAY_MODEL.offset.y, SUBWAY_MODEL.offset.z);
-      model.updateMatrixWorld(true); // isOverheadBarClutter()의 기하학적 안전망이 정확한 월드 좌표를 읽도록
+      // 출입문 중심(x=0)의 오른쪽 절반만 남기고, 그 절반을 X축 반전 복제해 왼쪽 차량을 구성한다.
+      const rightHalf = gltf.scene;
+      const leftHalf = rightHalf.clone(true);
+      rightHalf.scale.set(SUBWAY_MODEL.scale.x, SUBWAY_MODEL.scale.y, SUBWAY_MODEL.scale.z);
+      rightHalf.position.set(SUBWAY_MODEL.offset.x, SUBWAY_MODEL.offset.y, SUBWAY_MODEL.offset.z);
+      leftHalf.scale.set(-SUBWAY_MODEL.scale.x, SUBWAY_MODEL.scale.y, SUBWAY_MODEL.scale.z);
+      leftHalf.position.set(-SUBWAY_MODEL.offset.x, SUBWAY_MODEL.offset.y, SUBWAY_MODEL.offset.z);
+      rightHalf.updateMatrixWorld(true);
+      leftHalf.updateMatrixWorld(true);
       renderer.localClippingEnabled = true;
-      model.traverse(o => {
-        if (!o.isMesh) return;
-        if (isOverheadBarClutter(o)) { o.visible = false; return; }
-        o.castShadow = true; o.receiveShadow = true;
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach(m => { applyGlassTransparency(m); if (m) m.clippingPlanes = [modelClipPlane]; });
-      });
-      scene.add(model);
-      shellMeshes.forEach(m => { if (m) m.visible = false; });
 
-      // 모델의 실제(스케일 적용 후) X 끝단을 계산해서 끝벽을 거기에 딱 맞춰 재배치 —
-      // 트리밍으로 잘려나간 모델 끝부분이 뻥 뚫려 보이던 문제를 해결.
-      const box = new THREE.Box3().setFromObject(model);
-      if (endCapMeshes && endCapMeshes.length){
-        const capThickness = 0.25;
-        const targets = [ box.min.x + capThickness/2, box.max.x - capThickness/2 ];
-        endCapMeshes.forEach((cap, i) => {
-          cap.wall.position.x = targets[i];
-          cap.stripe.position.x = targets[i];
+      function prepareModelHalf(root,halfPlane){
+        root.traverse(o=>{
+          if (!o.isMesh) return;
+          if (isOverheadBarClutter(o)) { o.visible=false; return; }
+          o.castShadow=true; o.receiveShadow=true;
+          // scene.clone(true)는 재질을 공유하므로 절반마다 복제해야 별도 클리핑 평면을 유지할 수 있다.
+          const sourceMats=Array.isArray(o.material)?o.material:[o.material];
+          const clonedMats=sourceMats.map(source=>{
+            if (!source) return source;
+            const material=source.clone();
+            applyGlassTransparency(material);
+            material.clippingPlanes=[modelClipPlane,halfPlane];
+            material.clipIntersection=false;
+            return material;
+          });
+          o.material=Array.isArray(o.material)?clonedMats:clonedMats[0];
         });
+      }
+      prepareModelHalf(rightHalf,modelRightHalfPlane);
+      prepareModelHalf(leftHalf,modelLeftHalfPlane);
+      scene.add(rightHalf,leftHalf);
+      shellMeshes.forEach(m => { if (m) m.visible = false; });
+      // The GLB already contains the subway entrance doors. Keep the primitive doors only as
+      // invisible state carriers for updateDoors(); otherwise their cyan panels overlap the model.
+      if(doorLeft) doorLeft.visible=false;
+      if(doorRight) doorRight.visible=false;
+
+      if (endCapMeshes && endCapMeshes.length){
+        // NPC 입장문(x=0)을 대칭축으로 양쪽 연결 격벽을 같은 거리에 고정한다.
+        CAR.leftConnectorX = -14.20;
+        CAR.connectorX = 14.20;
+        endCapMeshes[0].root.position.x = CAR.leftConnectorX;
+        endCapMeshes[1].root.position.x = CAR.connectorX;
       }
 
       // 클리핑으로 지붕을 통째로 지워서 차량이 "뚜껑 없는 상자"처럼 보이던 문제 보완 —
       // 완전 불투명 지붕(=다시 시야를 막음) 대신 아주 옅은 반투명 캡만 얹어서 "막힌 공간" 느낌만 살림.
       const ceiling = new THREE.Mesh(
-        new THREE.PlaneGeometry(box.max.x - box.min.x, 5),
+        new THREE.PlaneGeometry(CAR.connectorX-CAR.leftConnectorX, 5),
         new THREE.MeshStandardMaterial({ color:0xe8e4da, transparent:true, opacity:0.12, depthWrite:false, side:THREE.DoubleSide })
       );
       ceiling.rotation.x = -Math.PI/2;
-      ceiling.position.set((box.min.x+box.max.x)/2, MODEL_CLIP_Y+0.02, 0);
+      ceiling.position.set((CAR.leftConnectorX+CAR.connectorX)/2, MODEL_CLIP_Y+0.02, 0);
       scene.add(ceiling);
     }).catch(err => {
       console.warn('[scene] 지하철 차량 모델 로드 실패 — 프리미티브 차량으로 유지합니다.', err);
@@ -169,8 +190,276 @@
     const cv = document.createElement('canvas'); cv.width=pixelW; cv.height=pixelH;
     drawFn(cv.getContext('2d'), pixelW, pixelH);
     const tex = new THREE.CanvasTexture(cv);
-    return new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH),
+    const panel=new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH),
       new THREE.MeshStandardMaterial({ map:tex, roughness:0.9, metalness:0 }));
+    panel.userData.canvas=cv;panel.userData.canvasTexture=tex;
+    return panel;
+  }
+
+  /* ============ Moving exterior (train-motion illusion) ============ */
+  let exteriorTunnelGroup = null;
+  let exteriorPlatformGroup = null;
+  let exteriorTunnelSegments = [];
+  let exteriorScrollSpeed = 0;
+  let exteriorStationSignPanels = [];
+  let exteriorRenderedStationIndex = -1;
+  const EXTERIOR_SEGMENT_LENGTH = 7.5;
+  const EXTERIOR_SEGMENT_COUNT = 12;
+  const PLATFORM_STATIONS = [
+    {name:'서울역',english:'Seoul Station',number:133},
+    {name:'시청',english:'City Hall',number:132},
+    {name:'종각',english:'Jonggak',number:131},
+    {name:'종로3가',english:'Jongno 3(sam)-ga',number:130},
+    {name:'종로5가',english:'Jongno 5(o)-ga',number:129}
+  ];
+
+  function drawPlatformStationSign(ctx,w,h,index){
+    const stationIndex=THREE.MathUtils.clamp(Number(index)||0,0,PLATFORM_STATIONS.length-1);
+    const station=PLATFORM_STATIONS[stationIndex];
+    const previous=stationIndex===0 ? {name:'남영'} : PLATFORM_STATIONS[stationIndex-1];
+    const next=stationIndex===PLATFORM_STATIONS.length-1 ? {name:'동대문'} : PLATFORM_STATIONS[stationIndex+1];
+    ctx.clearRect(0,0,w,h);ctx.fillStyle='#f7f8f8';ctx.fillRect(0,0,w,h);
+    ctx.fillStyle='#0052a4';ctx.fillRect(0,0,w,28);
+    ctx.strokeStyle='#90989c';ctx.lineWidth=7;ctx.strokeRect(4,4,w-8,h-8);
+    ctx.fillStyle='#0052a4';ctx.beginPath();ctx.arc(78,126,50,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 42px sans-serif';ctx.textAlign='center';ctx.fillText(String(station.number),78,141);
+    ctx.fillStyle='#20262a';ctx.font='bold 70px sans-serif';ctx.fillText(station.name,390,116);
+    ctx.font='bold 30px sans-serif';ctx.fillStyle='#4b555a';ctx.fillText(station.english,390,165);
+    ctx.font='24px sans-serif';ctx.fillStyle='#687277';ctx.fillText(`${previous.name}  ←   ·   →  ${next.name}`,390,205);
+  }
+
+  function refreshPlatformStationSigns(index){
+    const stationIndex=THREE.MathUtils.clamp(Number(index)||0,0,PLATFORM_STATIONS.length-1);
+    if(exteriorRenderedStationIndex===stationIndex) return;
+    exteriorRenderedStationIndex=stationIndex;
+    exteriorStationSignPanels.forEach(panel=>{
+      const canvas=panel.userData.canvas;
+      drawPlatformStationSign(canvas.getContext('2d'),canvas.width,canvas.height,stationIndex);
+      panel.userData.canvasTexture.needsUpdate=true;
+    });
+  }
+
+  function buildMovingExterior(){
+    exteriorTunnelGroup = new THREE.Group();
+    exteriorPlatformGroup = new THREE.Group();
+    exteriorTunnelSegments = [];
+    exteriorStationSignPanels = [];
+    exteriorRenderedStationIndex = -1;
+
+    function makeGritTexture(baseRGB,noiseAmount,kind,repeatX,repeatY){
+      const size=512,canvas=document.createElement('canvas');
+      canvas.width=size; canvas.height=size;
+      const ctx=canvas.getContext('2d');
+      const image=ctx.createImageData(size,size);
+      for(let i=0;i<image.data.length;i+=4){
+        const grain=(Math.random()-0.5)*noiseAmount;
+        image.data[i]=THREE.MathUtils.clamp(baseRGB[0]+grain,0,255);
+        image.data[i+1]=THREE.MathUtils.clamp(baseRGB[1]+grain,0,255);
+        image.data[i+2]=THREE.MathUtils.clamp(baseRGB[2]+grain,0,255);
+        image.data[i+3]=255;
+      }
+      ctx.putImageData(image,0,0);
+      if(kind==='concrete'){
+        for(let i=0;i<32;i++){
+          const x=Math.random()*size,y=Math.random()*size,r=8+Math.random()*46;
+          const stain=ctx.createRadialGradient(x,y,0,x,y,r);
+          stain.addColorStop(0,'rgba(25,29,31,0.16)'); stain.addColorStop(1,'rgba(25,29,31,0)');
+          ctx.fillStyle=stain; ctx.fillRect(x-r,y-r,r*2,r*2);
+        }
+        ctx.strokeStyle='rgba(15,18,20,0.34)'; ctx.lineWidth=2;
+        for(let i=0;i<6;i++){
+          let x=Math.random()*size,y=Math.random()*size; ctx.beginPath(); ctx.moveTo(x,y);
+          for(let p=0;p<5;p++){x+=(Math.random()-0.5)*55;y+=20+Math.random()*35;ctx.lineTo(x,y);}
+          ctx.stroke();
+        }
+      } else if(kind==='tunnel'){
+        ctx.strokeStyle='rgba(8,10,12,0.58)'; ctx.lineWidth=7;
+        [0,256,511].forEach(x=>{ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,size);ctx.stroke();});
+        [0,170,340,511].forEach(y=>{ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(size,y);ctx.stroke();});
+        for(let i=0;i<20;i++){
+          const x=Math.random()*size,w=3+Math.random()*14;
+          const streak=ctx.createLinearGradient(x,0,x+w,0);
+          streak.addColorStop(0,'rgba(0,0,0,0)');streak.addColorStop(.5,'rgba(0,0,0,.28)');streak.addColorStop(1,'rgba(0,0,0,0)');
+          ctx.fillStyle=streak;ctx.fillRect(x,0,w,size);
+        }
+      } else if(kind==='steel'){
+        for(let y=4;y<size;y+=7){
+          ctx.strokeStyle=`rgba(255,255,255,${0.035+Math.random()*0.07})`;
+          ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(size,y+(Math.random()-0.5)*2);ctx.stroke();
+        }
+      } else if(kind==='wood'){
+        for(let y=0;y<size;y+=5+Math.random()*7){
+          ctx.strokeStyle=`rgba(45,22,8,${0.12+Math.random()*0.18})`;
+          ctx.lineWidth=1+Math.random()*2;ctx.beginPath();ctx.moveTo(0,y);
+          ctx.bezierCurveTo(size*.3,y+Math.random()*12-6,size*.7,y+Math.random()*12-6,size,y);ctx.stroke();
+        }
+        for(let i=0;i<9;i++){
+          const x=Math.random()*size,y=Math.random()*size;
+          ctx.strokeStyle='rgba(35,17,7,.34)';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(x,y,14+Math.random()*22,5+Math.random()*7,0,0,Math.PI*2);ctx.stroke();
+        }
+      } else if(kind==='gravel'){
+        for(let i=0;i<1450;i++){
+          const x=Math.random()*size,y=Math.random()*size,r=1.5+Math.random()*5;
+          const shade=55+Math.floor(Math.random()*75);
+          ctx.fillStyle=`rgb(${shade},${shade+Math.floor(Math.random()*8)},${shade+Math.floor(Math.random()*5)})`;
+          ctx.beginPath();
+          for(let p=0;p<6;p++){
+            const a=Math.PI*2*p/6,rr=r*(.65+Math.random()*.5);
+            const px=x+Math.cos(a)*rr,py=y+Math.sin(a)*rr;
+            p===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+          }
+          ctx.closePath();ctx.fill();
+        }
+      } else if(kind==='tile'){
+        ctx.strokeStyle='rgba(78,82,84,.34)';ctx.lineWidth=3;
+        for(let x=0;x<=size;x+=64){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,size);ctx.stroke();}
+        for(let y=0;y<=size;y+=64){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(size,y);ctx.stroke();}
+        for(let i=0;i<260;i++){
+          const shade=120+Math.floor(Math.random()*70);
+          ctx.fillStyle=`rgba(${shade},${shade},${shade},.18)`;
+          ctx.fillRect(Math.random()*size,Math.random()*size,1+Math.random()*3,1+Math.random()*3);
+        }
+      } else if(kind==='panel'){
+        ctx.strokeStyle='rgba(92,98,102,.48)';ctx.lineWidth=4;
+        for(let x=0;x<=size;x+=128){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,size);ctx.stroke();}
+        for(let y=0;y<=size;y+=256){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(size,y);ctx.stroke();}
+        ctx.strokeStyle='rgba(255,255,255,.28)';ctx.lineWidth=2;
+        for(let x=4;x<size;x+=128){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,size);ctx.stroke();}
+      }
+      const tex=new THREE.CanvasTexture(canvas);
+      tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+      tex.repeat.set(repeatX,repeatY);
+      tex.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+      tex.encoding=THREE.sRGBEncoding;
+      return tex;
+    }
+
+    const tunnelTex=makeGritTexture([72,76,78],34,'tunnel',3,2);
+    const steelTex=makeGritTexture([139,145,146],30,'steel',7,1);
+    const tunnelWallMat = new THREE.MeshStandardMaterial({map:tunnelTex,bumpMap:tunnelTex,bumpScale:0.055,color:0xc8cccd,roughness:0.91,metalness:0.04,side:THREE.DoubleSide});
+    const platformSideTunnelMat = new THREE.MeshStandardMaterial({
+      map:tunnelTex,bumpMap:tunnelTex,bumpScale:0.065,color:0x67737b,
+      roughness:0.94,metalness:0.03,transparent:false,opacity:1,depthWrite:true
+    });
+    const tunnelFloorMat = new THREE.MeshStandardMaterial({
+      map:tunnelTex,bumpMap:tunnelTex,bumpScale:0.045,color:0x5d6870,
+      roughness:0.96,metalness:0.02,transparent:false,opacity:1,depthWrite:true
+    });
+    const tunnelRibMat = new THREE.MeshStandardMaterial({map:steelTex,bumpMap:steelTex,bumpScale:0.025,color:0x858c90,roughness:0.44,metalness:0.67});
+    const lightHousingMat = new THREE.MeshStandardMaterial({map:steelTex,color:0x343a3e,roughness:0.42,metalness:0.72});
+    const tunnelLightMat = new THREE.MeshStandardMaterial({
+      color:0xe8f1ed,emissive:0xcbe8dc,emissiveIntensity:0.5,roughness:0.62,metalness:0.02
+    });
+    const nearWallMat = new THREE.MeshStandardMaterial({
+      map:tunnelTex,bumpMap:tunnelTex,bumpScale:0.04,color:0xc8cccd,roughness:0.91,
+      metalness:0.04,transparent:false,opacity:1,depthWrite:true,side:THREE.DoubleSide
+    });
+
+    function exteriorBox(group,size,material,position){
+      const mesh=new THREE.Mesh(new THREE.BoxGeometry(size[0],size[1],size[2]),material);
+      mesh.position.set(position[0],position[1],position[2]);
+      mesh.receiveShadow=false; mesh.castShadow=false; group.add(mesh);
+      return mesh;
+    }
+
+    for(let i=0;i<EXTERIOR_SEGMENT_COUNT;i++){
+      const segment=new THREE.Group();
+      segment.position.x=(i-(EXTERIOR_SEGMENT_COUNT-1)/2)*EXTERIOR_SEGMENT_LENGTH;
+      exteriorBox(segment,[EXTERIOR_SEGMENT_LENGTH-0.04,0.12,1.42],tunnelFloorMat,[0,-0.08,CAR.farWallZ-0.69]);
+      exteriorBox(segment,[EXTERIOR_SEGMENT_LENGTH-0.04,0.12,1.42],tunnelFloorMat,[0,-0.08,CAR.nearWallZ+0.69]);
+      // Opaque platform-side wall prevents the gray scene background from reading as tunnel geometry.
+      exteriorBox(segment,[EXTERIOR_SEGMENT_LENGTH-0.06,3.15,0.32],platformSideTunnelMat,[0,1.42,CAR.farWallZ-1.35]);
+      const arch=new THREE.Mesh(
+        new THREE.CylinderGeometry(4.25,4.25,EXTERIOR_SEGMENT_LENGTH-0.08,18,1,true,Math.PI*1.5,Math.PI*0.22),
+        tunnelWallMat
+      );
+      arch.rotation.z=Math.PI/2;arch.receiveShadow=false;arch.castShadow=false;segment.add(arch);
+      exteriorBox(segment,[0.16,2.9,0.42],tunnelRibMat,[-EXTERIOR_SEGMENT_LENGTH/2,1.3,CAR.farWallZ-1.32]);
+      exteriorBox(segment,[2.55,0.23,0.46],lightHousingMat,[0,1.95,CAR.farWallZ-1.13]);
+      exteriorBox(segment,[2.24,0.09,0.49],tunnelLightMat,[0,1.91,CAR.farWallZ-0.90]);
+
+      // The camera looks through the near side, so only a low parapet is drawn there.
+      exteriorBox(segment,[EXTERIOR_SEGMENT_LENGTH-0.08,0.5,0.3],nearWallMat,[0,0.19,CAR.nearWallZ+1.35]);
+      exteriorBox(segment,[0.15,0.68,0.4],tunnelRibMat,[-EXTERIOR_SEGMENT_LENGTH/2,0.26,CAR.nearWallZ+1.32]);
+      exteriorTunnelGroup.add(segment);
+      exteriorTunnelSegments.push(segment);
+    }
+
+    const graniteTex=makeGritTexture([186,188,186],34,'tile',12,3);
+    const wallPanelTex=makeGritTexture([218,221,220],18,'panel',12,2);
+    const platformFloorMat = new THREE.MeshStandardMaterial({map:graniteTex,bumpMap:graniteTex,bumpScale:0.035,color:0xe2e3df,roughness:0.72,metalness:0.08});
+    const platformWallMat = new THREE.MeshStandardMaterial({map:wallPanelTex,bumpMap:wallPanelTex,bumpScale:0.018,color:0xf2f4f2,roughness:0.62,metalness:0.09});
+    const platformTrimMat = new THREE.MeshStandardMaterial({map:steelTex,color:0xa5adb1,roughness:0.38,metalness:0.72});
+    const columnMat = new THREE.MeshStandardMaterial({map:wallPanelTex,color:0xe1e5e2,roughness:0.65,metalness:0.16});
+    const ceilingMat = new THREE.MeshStandardMaterial({map:steelTex,color:0x343a3e,roughness:0.48,metalness:0.68});
+    const lineBandMat = new THREE.MeshStandardMaterial({color:LINE_COLOR,roughness:0.52,metalness:0.18});
+    const safetyMat = new THREE.MeshStandardMaterial({color:0xe7b91d,roughness:0.76,metalness:0.0,bumpMap:graniteTex,bumpScale:0.05});
+    exteriorBox(exteriorPlatformGroup,[76,0.18,3.6],platformFloorMat,[0,-0.08,CAR.farWallZ-2.12]);
+    exteriorBox(exteriorPlatformGroup,[76,3.2,0.28],platformWallMat,[0,1.46,CAR.farWallZ-3.85]);
+    exteriorBox(exteriorPlatformGroup,[76,0.075,0.28],safetyMat,[0,0.03,CAR.farWallZ-0.48]);
+    exteriorBox(exteriorPlatformGroup,[76,0.12,0.12],platformTrimMat,[0,2.84,CAR.farWallZ-3.66]);
+
+    for(let x=-34;x<=34;x+=6.8){
+      // Keep the EXIT sightline and the central boarding path clear.
+      if(Math.abs(x)>0.5){
+        const column=new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.31,3.0,20),columnMat);
+        column.position.set(x,1.42,CAR.farWallZ-3.05);exteriorPlatformGroup.add(column);
+        const base=new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.34,0.18,20),platformTrimMat);
+        base.position.set(x,0.09,CAR.farWallZ-3.05);exteriorPlatformGroup.add(base);
+        const band=new THREE.Mesh(new THREE.CylinderGeometry(0.292,0.292,0.18,20),lineBandMat);
+        band.position.set(x,1.72,CAR.farWallZ-3.05);exteriorPlatformGroup.add(band);
+      }
+      exteriorBox(exteriorPlatformGroup,[2.8,0.18,0.42],ceilingMat,[x+3.05,2.74,CAR.farWallZ-2.45]);
+      exteriorBox(exteriorPlatformGroup,[2.45,0.075,0.45],tunnelLightMat,[x+3.05,2.67,CAR.farWallZ-2.43]);
+    }
+    for(let x=-27;x<=27;x+=13.5){
+      const sign=makeCanvasPanel(768,230,(ctx,w,h)=>{
+        drawPlatformStationSign(ctx,w,h,G.stationIndex);
+      },4.25,1.28);
+      sign.position.set(x,1.66,CAR.farWallZ-3.69);
+      exteriorPlatformGroup.add(sign);
+      exteriorStationSignPanels.push(sign);
+    }
+
+    // One decorative waiting bench, placed away from the central boarding path.
+    const benchRoot=new THREE.Group();
+    benchRoot.position.set(4.2,0,CAR.farWallZ-2.95);
+    const benchPlasticMat=new THREE.MeshStandardMaterial({color:0x315d78,roughness:0.42,metalness:0.04});
+    const benchMetalMat=new THREE.MeshStandardMaterial({map:steelTex,bumpMap:steelTex,bumpScale:0.018,color:0xaeb7ba,roughness:0.28,metalness:0.88});
+    [-0.18,0,0.18].forEach(z=>exteriorBox(benchRoot,[2.5,0.11,0.14],benchPlasticMat,[0,0.43,z]));
+    [0.68,0.86].forEach(y=>exteriorBox(benchRoot,[2.5,0.15,0.11],benchPlasticMat,[0,y,-0.31]));
+    [-0.92,0.92].forEach(x=>{
+      exteriorBox(benchRoot,[0.11,0.48,0.11],benchMetalMat,[x,0.22,0]);
+      exteriorBox(benchRoot,[0.11,0.52,0.11],benchMetalMat,[x,0.57,-0.31]);
+    });
+    exteriorPlatformGroup.add(benchRoot);
+
+    scene.add(exteriorTunnelGroup,exteriorPlatformGroup);
+    updateMovingExterior(0,true);
+  }
+
+  function updateMovingExterior(dt,force){
+    if(!exteriorTunnelGroup || !exteriorPlatformGroup) return;
+    const atStation = G.state===GameState.READY || G.state===GameState.BOARDING ||
+      G.state===GameState.SEAT_RUSH || G.state===GameState.ARRIVAL || G.doorsOpen;
+    exteriorPlatformGroup.visible=atStation;
+    exteriorTunnelGroup.visible=!atStation;
+    if(atStation) refreshPlatformStationSigns(G.stationIndex);
+
+    const targetSpeed=atStation ? 0 : 9.5;
+    exteriorScrollSpeed=force ? targetSpeed : THREE.MathUtils.lerp(
+      exteriorScrollSpeed,targetSpeed,1-Math.exp(-dt*(atStation?7:2.4))
+    );
+    if(atStation || dt<=0) return;
+
+    const span=EXTERIOR_SEGMENT_LENGTH*EXTERIOR_SEGMENT_COUNT;
+    const center=camera ? camera.position.x : 0;
+    const leftEdge=center-span/2;
+    exteriorTunnelSegments.forEach(segment=>{
+      segment.position.x-=exteriorScrollSpeed*dt;
+      while(segment.position.x<leftEdge) segment.position.x+=span;
+      while(segment.position.x>=leftEdge+span) segment.position.x-=span;
+    });
   }
 
   // 실제 모델 로드 시 가려질 프리미티브 껍데기 메시들(buildEnvironment/buildBenchesAndSeats/buildHandles가 공유)
@@ -198,6 +487,9 @@
 
     const platform = new THREE.Mesh(new THREE.BoxGeometry(carLen+1, 0.2, 3.8), matClay(0xd2d5da));
     platform.position.set(0,-0.1, CAR.farWallZ - 2.1); platform.receiveShadow = true; scene.add(platform);
+    // Replaced by the state-aware platform/tunnel exterior.
+    platform.visible = false;
+    buildMovingExterior();
 
     // 원경 벽 (far wall) — 문 구멍 자리는 두 조각으로 분리. 실제 차량 내장재에 가까운 아이보리 톤 패널.
     const wallMat = new THREE.MeshStandardMaterial({
@@ -226,16 +518,78 @@
     lintel.position.set(0, wallH-0.25, CAR.farWallZ); scene.add(lintel);
     envShellMeshes.push(lintel);
 
-    // 양끝 벽 — 모델이 로드되면 이 위치가 모델의 실제(스케일 적용 후) 끝 지점으로 재배치된다.
-    // 항상 보이는 상태 유지(envShellMeshes에 넣지 않음) — 모델 로드 실패/전이든 뻥 뚫린 끝이 없게.
-    const endWallX = [ -carLen/2-0.2, carLen/2+0.2 ];
-    const endCapMeshes = endWallX.map(x=>{
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.25, wallH, carWidth), wallMat);
-      m.position.set(x, wallH/2, 0); m.receiveShadow=true; scene.add(m);
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.1, carWidth), lineStripeMat);
-      stripe.position.set(x, 1.62, 0); scene.add(stripe);
-      return { wall:m, stripe };
-    });
+    function buildInterCarBulkhead(){
+      const root = new THREE.Group();
+      const bulkheadWidth=4.00, bulkheadHeight=2.55;
+      const doorWidth=1.5, doorHalf=doorWidth/2, doorHeight=2.12;
+      const sideWidth=(bulkheadWidth-doorWidth)/2;
+      const panelMat=new THREE.MeshStandardMaterial({color:0xe9ece8,roughness:0.72,metalness:0.08});
+      const trimMat=matMetal(0xc4c9c7);
+      const glassMat=new THREE.MeshStandardMaterial({color:0xc7e2df,roughness:0.18,metalness:0.08,transparent:true,opacity:0.48,depthWrite:false});
+      function box(sx,sy,sz,mat,x,y,z){
+        const mesh=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);
+        mesh.position.set(x,y,z);
+        // 얇고 큰 격벽 BoxGeometry가 자체 그림자를 받으면 삼각형 경계를 따라 shadow acne가 생긴다.
+        // 연결문 그룹은 실내 조명만 받아도 형태가 충분히 읽히므로 전체 부품의 그림자 투사/수신을 끈다.
+        mesh.castShadow=false; mesh.receiveShadow=false;
+        root.add(mesh); return mesh;
+      }
+
+      // 중앙 통로만 비운 양쪽 내장 패널과 상부 인방
+      box(0.24,bulkheadHeight,sideWidth,panelMat,0,bulkheadHeight/2,-doorHalf-sideWidth/2);
+      box(0.24,bulkheadHeight,sideWidth,panelMat,0,bulkheadHeight/2, doorHalf+sideWidth/2);
+      box(0.24,bulkheadHeight-doorHeight,doorWidth,panelMat,0,doorHeight+(bulkheadHeight-doorHeight)/2,0);
+
+      // 스테인리스 문틀과 아래쪽 문턱
+      [-doorHalf,doorHalf].forEach(z=>box(0.30,doorHeight,0.075,trimMat,0,doorHeight/2,z));
+      box(0.30,0.075,doorWidth,trimMat,0,doorHeight,0);
+      box(0.42,0.055,doorWidth+0.2,trimMat,0,0.025,0);
+
+      // 중앙 개구부를 좌우 슬라이딩 유리문 두 장으로 채운다. 문짝은 서로 중앙에서 만나고,
+      // 각각 바깥쪽으로 미끄러져 열리는 서울 지하철 관통문 형태다.
+      [-1,1].forEach(side=>{
+        const leafWidth=doorHalf-0.035;
+        const leafZ=side*doorWidth*0.25;
+        box(0.09,1.98,leafWidth,glassMat,-0.05,1.08,leafZ);
+        [-leafWidth/2,leafWidth/2].forEach(dz=>box(0.12,2.08,0.038,trimMat,-0.06,1.08,leafZ+dz));
+        [0.04,2.12].forEach(y=>box(0.12,0.045,leafWidth+0.04,trimMat,-0.06,y,leafZ));
+        const safetyBand=new THREE.MeshStandardMaterial({color:0xe8f2ef,transparent:true,opacity:0.62,depthWrite:false});
+        box(0.10,0.12,leafWidth-0.10,safetyBand,-0.11,1.05,leafZ);
+        box(0.14,0.16,0.032,trimMat,-0.13,1.18,leafZ-side*(leafWidth*0.28));
+      });
+
+      // 차량번호/칸 번호 표지
+      const numberPanel=makeCanvasPanel(512,128,(ctx,w,h)=>{
+        ctx.fillStyle='#eef1ed';ctx.fillRect(0,0,w,h);
+        ctx.strokeStyle='#9ba4a0';ctx.lineWidth=6;ctx.strokeRect(3,3,w-6,h-6);
+        ctx.fillStyle='#26302d';ctx.textAlign='center';ctx.font='bold 48px sans-serif';ctx.fillText('2015   2',w/2,78);
+      },1.20,0.30);
+      numberPanel.rotation.y=Math.PI/2;numberPanel.position.set(-0.14,2.36,0);root.add(numberPanel);
+
+      // 교통약자 표지와 실제 차량 벽면의 점검함/안내 스티커
+      const accessPanel=makeCanvasPanel(192,192,(ctx,w,h)=>{
+        ctx.fillStyle='#159447';ctx.fillRect(0,0,w,h);ctx.fillStyle='#fff';ctx.textAlign='center';
+        ctx.font='bold 112px sans-serif';ctx.fillText('♿',w/2,135);
+      },0.42,0.42);
+      accessPanel.rotation.y=Math.PI/2;accessPanel.position.set(-0.14,1.72,-1.28);root.add(accessPanel);
+      const notice=makeCanvasPanel(256,384,(ctx,w,h)=>{
+        ctx.fillStyle='#fffdf5';ctx.fillRect(0,0,w,h);ctx.strokeStyle='#d74335';ctx.lineWidth=10;ctx.strokeRect(6,6,w-12,h-12);
+        ctx.fillStyle='#c7352d';ctx.font='bold 36px sans-serif';ctx.textAlign='center';ctx.fillText('안전 안내',w/2,65);
+        ctx.fillStyle='#36403d';ctx.font='24px sans-serif';['문에 기대지 마세요','비상시 승무원 호출','통로를 비워주세요'].forEach((t,i)=>ctx.fillText(t,w/2,130+i*64));
+      },0.52,0.78);
+      notice.rotation.y=Math.PI/2;notice.position.set(-0.14,1.13,1.28);root.add(notice);
+
+      return root;
+    }
+
+    // 오른쪽 완성본을 동일 빌더로 복제하고, 왼쪽은 180° 회전해 객실 안쪽을 바라보게 한다.
+    const leftCap=buildInterCarBulkhead();
+    leftCap.position.x=-14.20; leftCap.rotation.y=Math.PI; scene.add(leftCap);
+    const rightCap=buildInterCarBulkhead();
+    rightCap.position.x=14.20; scene.add(rightCap);
+    CAR.leftConnectorX=leftCap.position.x;
+    CAR.connectorX=rightCap.position.x;
+    const endCapMeshes=[{root:leftCap},{root:rightCap}];
     // 근경(near)은 카메라를 위해 낮은 난간만
     const rail = new THREE.Mesh(new THREE.BoxGeometry(carLen, 0.4, 0.2), matClay(0xdadada));
     rail.position.set(0, 0.2, CAR.nearWallZ); scene.add(rail);
@@ -309,7 +663,7 @@
     buildHandles();
 
     // 실제 1호선 차량 모델 로드(비동기) — 성공 시 벽/바닥/벤치/좌석 등 프리미티브 껍데기를 가린다.
-    // 손잡이/문/끝벽은 절대 가리지 않음(항상 우리 프리미티브가 담당 — 애니메이션·경계 정합 때문).
+    // 손잡이/끝벽은 계속 사용하고, 폴백 문은 GLB 로드 성공 시 시각적으로만 숨긴다.
     loadSubwayModel(envShellMeshes, endCapMeshes);
   }
 
@@ -330,8 +684,10 @@
       envShellMeshes.push(bench, back);
     });
 
-    const farRow  = [-7.9, -6.2, -4.5, -2.8, 2.8, 4.5, 6.2, 7.9];   // 문쪽 벤치 8석
-    const nearRow = [-7.2, -4.8, -2.4, 0.0, 2.4, 4.8, 7.2];          // 반대쪽 벤치 7석
+    // GLB 벤치의 실측 피치(원본 약 0.478 × scale.x 2.0 = 약 0.956)에 맞춘 좌석 중심.
+    // 중앙 출입문 영역은 비워 두고, 모델에 실제로 존재하는 좌석 눈금만 사용한다.
+    const farRow  = [-5.24, -4.28, -3.33, -2.37, 2.39, 3.34, 4.30, 5.25]; // 문쪽 8석
+    const nearRow = [-4.28, -3.33, -2.37, 2.39, 3.34, 4.30, 5.25];        // 반대쪽 7석
     const seatDefs = [];
     farRow.forEach(x=> seatDefs.push({ x, z:-CAR.seatZ, face: 1 }));
     nearRow.forEach(x=> seatDefs.push({ x, z: CAR.seatZ, face:-1 }));
@@ -341,7 +697,7 @@
     seatDefs.forEach((d,i)=>{
       const isPriority = i===0 || i===farRow.length;
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(1.5, 0.14, 0.85),
+        new THREE.BoxGeometry(0.90, 0.14, 0.80),
         matClay(isPriority ? 0xffd400 : 0xd98c4a)
       );
       mesh.position.set(d.x, 0.55, d.z); mesh.receiveShadow=true; scene.add(mesh);
@@ -349,7 +705,7 @@
 
       // 빈자리 강조용 평면(좌석 위) — 색/투명도를 매 프레임 갱신
       const highlight = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.58, 0.94),
+        new THREE.PlaneGeometry(0.94, 0.84),
         new THREE.MeshBasicMaterial({ color:0xfff2c4, transparent:true, opacity:0, depthWrite:false })
       );
       highlight.rotation.x = -Math.PI/2;
@@ -358,7 +714,7 @@
 
       // 클릭 판정용 투명 박스(좌석보다 조금 크게 잡아 클릭을 쉽게 함)
       const pick = new THREE.Mesh(
-        new THREE.BoxGeometry(1.72, 1.25, 1.5),
+        new THREE.BoxGeometry(1.05, 1.25, 1.25),
         new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false })
       );
       pick.position.set(d.x, 0.62, d.z + d.face*0.3);
@@ -452,10 +808,96 @@
     arm.position.set(0.42*side, 0.56, 0);
     return arm;
   }
-  function makeCharacter(bodyColor, headColor) {
+
+  function cssColor(hex){ return '#'+new THREE.Color(hex).getHexString(); }
+
+  function makeCharacterCanvasMaterial(drawFn){
+    const canvas = document.createElement('canvas');
+    // 논리 좌표는 256을 유지하되 실제 텍스처는 2배로 그려 작은 캐릭터에서도 경계가 뭉개지지 않게 한다.
+    canvas.width = canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(2,2);
+    drawFn(ctx, 256, 256);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.encoding = THREE.sRGBEncoding;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.needsUpdate = true;
+    return new THREE.MeshStandardMaterial({ map:texture, color:0xffffff, roughness:0.92, metalness:0 });
+  }
+
+  // SphereGeometry의 +Z(캐릭터 정면)는 텍스처 U≈0.25에 해당한다.
+  // 머리카락을 구면 텍스처에 그려 별도 도형 없이 둥근 표면에 밀착시킨다.
+  function makeNpcHeadMaterial(skinColor, appearance){
+    return makeCharacterCanvasMaterial((ctx,w,h)=>{
+      const skin = cssColor(skinColor);
+      const hair = cssColor(appearance.hairColor || 0x201b18);
+      ctx.fillStyle=skin; ctx.fillRect(0,0,w,h);
+
+      // 정수리와 뒷머리 공통 영역
+      ctx.fillStyle=hair; ctx.fillRect(0,0,w,78);
+
+      // 정면(U≈0.25)은 얼굴로 열어 두고, 양쪽 관자놀이(U≈0/0.5)부터 뒷머리(U≈0.75)까지
+      // 하나의 연결된 영역으로 내려 그린다. 구면 옆쪽에 피부색 띠가 남지 않도록 UV 양끝도 함께 채운다.
+      ctx.beginPath();
+      ctx.moveTo(0,70); ctx.lineTo(27,76); ctx.lineTo(24,151); ctx.lineTo(14,171); ctx.lineTo(0,176);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(103,76); ctx.lineTo(256,70); ctx.lineTo(256,176);
+      ctx.lineTo(230,180); ctx.lineTo(192,190); ctx.lineTo(154,180); ctx.lineTo(128,171); ctx.lineTo(106,151);
+      ctx.closePath(); ctx.fill();
+
+      if (appearance.hairStyle==='part') {
+        ctx.beginPath(); ctx.moveTo(16,78); ctx.lineTo(113,78); ctx.lineTo(91,112); ctx.lineTo(23,100); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle=skin; ctx.lineWidth=7; ctx.beginPath(); ctx.moveTo(61,72); ctx.lineTo(78,100); ctx.stroke();
+      } else if (appearance.hairStyle==='bob') {
+        ctx.fillRect(7,72,24,112); ctx.fillRect(101,72,28,112);
+        ctx.beginPath(); ctx.moveTo(26,76); ctx.lineTo(108,76); ctx.lineTo(97,112); ctx.lineTo(32,108); ctx.closePath(); ctx.fill();
+      } else if (appearance.hairStyle==='bun') {
+        ctx.beginPath(); ctx.arc(184,35,30,0,Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(18,77); ctx.lineTo(112,77); ctx.lineTo(96,105); ctx.lineTo(26,98); ctx.closePath(); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.moveTo(12,76); ctx.lineTo(119,76); ctx.lineTo(110,108); ctx.lineTo(85,96); ctx.lineTo(65,111); ctx.lineTo(44,96); ctx.lineTo(20,108); ctx.closePath(); ctx.fill();
+      }
+
+    });
+  }
+
+  function makeNpcBodyMaterial(outfitColor, appearance){
+    return makeCharacterCanvasMaterial((ctx,w,h)=>{
+      ctx.fillStyle=cssColor(outfitColor); ctx.fillRect(0,0,w,h);
+      const frontX=64;
+      if (appearance.outfit==='suit' || appearance.outfit==='office') {
+        ctx.fillStyle='#f4f1e9';
+        ctx.beginPath(); ctx.moveTo(frontX-24,32); ctx.lineTo(frontX+24,32); ctx.lineTo(frontX+17,186); ctx.lineTo(frontX-17,186); ctx.closePath(); ctx.fill();
+        ctx.fillStyle=cssColor(outfitColor);
+        ctx.beginPath(); ctx.moveTo(frontX-43,34); ctx.lineTo(frontX-7,106); ctx.lineTo(frontX-22,128); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(frontX+43,34); ctx.lineTo(frontX+7,106); ctx.lineTo(frontX+22,128); ctx.closePath(); ctx.fill();
+        if (appearance.outfit==='suit') {
+          ctx.fillStyle='#7b2638';
+          ctx.beginPath(); ctx.moveTo(frontX,56); ctx.lineTo(frontX+8,76); ctx.lineTo(frontX+5,153); ctx.lineTo(frontX,166); ctx.lineTo(frontX-5,153); ctx.lineTo(frontX-8,76); ctx.closePath(); ctx.fill();
+        }
+      } else if (appearance.outfit==='cardigan') {
+        ctx.fillStyle='#f1eee6'; ctx.fillRect(frontX-18,30,36,178);
+        ctx.strokeStyle='#403833'; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(frontX+20,35); ctx.lineTo(frontX+20,210); ctx.stroke();
+        ctx.fillStyle='#403833'; [86,120,154].forEach(y=>{ ctx.beginPath(); ctx.arc(frontX+29,y,4,0,Math.PI*2); ctx.fill(); });
+      } else {
+        ctx.fillStyle='#d9d4ca'; ctx.fillRect(frontX-51,91,102,24);
+        ctx.fillStyle='rgba(255,255,255,0.42)'; ctx.fillRect(frontX-51,122,102,9);
+      }
+    });
+  }
+
+  function makeCharacter(bodyColor, headColor, appearance) {
     const g = new THREE.Group();
-    const bodyMat = matClay(bodyColor);
-    const headMat = matClay(headColor !== undefined ? headColor : bodyColor);
+    const hasNpcTexture = !!(appearance && appearance.outfit);
+    const solidBodyMat = matClay(bodyColor);
+    const bodyMat = hasNpcTexture ? makeNpcBodyMaterial(bodyColor, appearance) : solidBodyMat;
+    const headMat = hasNpcTexture
+      ? makeNpcHeadMaterial(headColor !== undefined ? headColor : bodyColor, appearance)
+      : matClay(headColor !== undefined ? headColor : bodyColor);
 
     // 몸통: 허리 구분 없이 스피어 하나를 눌러 콩(빈) 모양 실루엣으로
     const body = new THREE.Mesh(new THREE.SphereGeometry(0.46,20,16), bodyMat);
@@ -466,7 +908,7 @@
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.4,20,16), headMat);
     head.position.y = 1.0; head.castShadow=true; g.add(head);
 
-    // 눈: 작은 점 두 개(입 없음 — 단순한 표정)
+    // 모든 캐릭터가 플레이어와 동일한 입체 눈을 사용한다(눈썹은 두지 않음).
     const eyeMat = new THREE.MeshStandardMaterial({ color:0x2b2b2b, roughness:0.4 });
     [-0.14,0.14].forEach(ex=>{
       const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8), eyeMat);
@@ -475,13 +917,13 @@
 
     // 다리: 짧고 뭉툭하게(순수 장식 — 다른 코드가 참조하지 않음)
     [-0.19,0.19].forEach(x=>{
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.13,0.16,10), bodyMat);
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.13,0.16,10), solidBodyMat);
       leg.position.set(x,0.09,0); g.add(leg);
     });
 
     // 팔
-    const armL = makeStubLimb(bodyMat, -1);
-    const armR = makeStubLimb(bodyMat, 1);
+    const armL = makeStubLimb(solidBodyMat, -1);
+    const armR = makeStubLimb(solidBodyMat, 1);
     g.add(armL); g.add(armR);
 
     g.userData.head = head; g.userData.armR = armR; g.userData.armL = armL;
@@ -493,8 +935,8 @@
   // GLTF 파이프라인(character-assets.js 등)은 삭제하지 않고 남겨뒀지만 이 경로에서는 더 이상
   // 쓰지 않는다 — player.js/ai.js의 userData.characterModel 분기는 항상 falsy로 평가되어
   // 자동으로 프리미티브 경로를 타므로 별도 수정 없이도 안전하다.
-  function createCharacterGroup(bodyColor, headColor) {
-    return makeCharacter(bodyColor, headColor);
+  function createCharacterGroup(bodyColor, headColor, appearance) {
+    return makeCharacter(bodyColor, headColor, appearance);
   }
 
   // scene.remove(mesh)와 함께 항상 호출해야 하는 정리 훅. GLTF 인스턴스는 각자 독립적인
