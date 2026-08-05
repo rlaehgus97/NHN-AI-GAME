@@ -338,6 +338,7 @@
           // 문이 열릴 때까지 문 안쪽 차선에서 대기한다.
           if(G.doorsOpen) n.disembarkPhase='THROUGH_DOOR';
         } else {
+          destroyCharacterModel(n.mesh);
           scene.remove(n.mesh);
           npcs.splice(i,1);
         }
@@ -566,6 +567,10 @@
       }
       if (bodyP) bodyP.rotation.z += (0 - bodyP.rotation.z)*Math.min(1,dt*6);
       if (bp) bp.rotation.y += (0 - bp.rotation.y)*Math.min(1,dt*6);
+      // GLTF 캐릭터라면 MOVE 상태에서만 Walking/Idle 크로스페이드(연출 개선, 선택사항).
+      // bodyP의 자식은 createCharacterGroup() 결과(GLTF면 characterModel.group, 아니면 프리미티브 그룹).
+      const bodyCM = bodyP && bodyP.children[0] && bodyP.children[0].userData.characterModel;
+      if (bodyCM) bodyCM.setLocomotion(d>0.05 ? 'walk' : 'idle');
       if (attackDistance<0.75 && v.timer>0.35){
         v.state='TELEGRAPH';
         v.telegraphDuration = 0.7 + Math.random()*0.3;

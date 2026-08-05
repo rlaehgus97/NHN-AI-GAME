@@ -152,6 +152,7 @@ function hasNearbyUtilityVillain(){
 
 function resolveUtilityVillain(v){
   v.defeated=true;
+  destroyCharacterModel(v.mesh);
   scene.remove(v.mesh);
   if(v.zoneMesh) scene.remove(v.zoneMesh);
   if(v.type==='umbrella'){

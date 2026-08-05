@@ -317,8 +317,8 @@
   /* ============ Reset and restart ============ */
   function clearDynamicObjects(){
     clearEnvironmentHazards();
-    npcs.forEach(n=> scene.remove(n.mesh)); npcs=[];
-    villains.forEach(v=>{ scene.remove(v.mesh); if(v.zoneMesh) scene.remove(v.zoneMesh); }); villains=[];
+    npcs.forEach(n=>{ destroyCharacterModel(n.mesh); scene.remove(n.mesh); }); npcs=[];
+    villains.forEach(v=>{ destroyCharacterModel(v.mesh); scene.remove(v.mesh); if(v.zoneMesh) scene.remove(v.zoneMesh); }); villains=[];
     seats.forEach(s=>{
       s.occupied=false; s.occupant=null;
       s.captureProgress=0; s.npcProgress=0; s.npcClaimantRef=null;
@@ -367,8 +367,8 @@
     const camX = THREE.MathUtils.clamp(p.x, -3.5, 3.5);
     const tx = camX + sx;
     camera.position.x += (tx - camera.position.x)*Math.min(1,dt*4);
-    camera.position.y = 9;
-    camera.position.z = 10 + sz;
+    camera.position.y = 11.5; // initScene()과 동일 — 문쪽 벽 근처 캐릭터가 벽에 가려 안 보이던 문제 보완
+    camera.position.z = 7.5 + sz;
     camera.lookAt(camX, 0.8, p.z*0.3);
   }
 
@@ -384,6 +384,7 @@
       resolveNPCPush(dt);
       updateStates(dt);
     }
+    if (window.GameModules && window.GameModules.CharacterAssets) window.GameModules.CharacterAssets.updateAll(dt);
     updateDoors(dt);
     VisualFX.update(dt);
     updateCamera(dt);
@@ -453,7 +454,27 @@
     window.addEventListener('blur', onBlur);
     window.addEventListener('resize', onResize);
     // 좌클릭 방향 조준 방지용: canvas 우클릭 메뉴 차단
-    renderer.domElement.addEventListener('contextmenu', e=>e.preventDefault());
+    // ---- 임시 진단 기능: 우클릭한 지점의 3D 물체 이름을 화면에 표시(정체불명 오브젝트 찾기용) ----
+    renderer.domElement.addEventListener('contextmenu', e=>{
+      e.preventDefault();
+      const rect = renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX-rect.left)/rect.width)*2-1,
+        -((e.clientY-rect.top)/rect.height)*2+1
+      );
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, camera);
+      const hits = ray.intersectObjects(scene.children, true);
+      if (hits.length){
+        const obj = hits[0].object;
+        const chain = [];
+        for (let o=obj; o; o=o.parent){ if (o.name) chain.unshift(o.name); }
+        console.log('[진단] 우클릭 물체:', chain.join(' > '), obj);
+        showCenter('진단: ' + (chain.join(' > ') || '(이름 없음)'), false, 4);
+      } else {
+        showCenter('진단: 클릭 위치에 물체 없음', false, 2);
+      }
+    });
 
     document.getElementById('startBtn').addEventListener('click', startNewGame);
     document.getElementById('restartBtn').addEventListener('click', startNewGame);
@@ -469,6 +490,8 @@
   }
 
   function main(){
+    // 캐릭터가 전부 즉시 생성되는 절차적 젤리빈이라(비동기 애셋 로딩 없음) 더 이상
+    // 로딩 게이팅이 필요 없음 — Start 버튼은 처음부터 활성 상태(index.html 기본값).
     initScene();
     buildEnvironment();
     buildPlayer();

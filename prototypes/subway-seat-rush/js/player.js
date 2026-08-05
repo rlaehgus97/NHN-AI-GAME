@@ -20,7 +20,9 @@
     return best;
   }
 
-  // 모든 캐릭터가 같은 위치·회전·크기로 앉도록 하는 공통 착석 포즈
+  // 모든 캐릭터가 같은 위치·회전으로 앉도록 하는 공통 착석 포즈.
+  // GLTF 캐릭터는 Sitting 애니메이션 클립이 자세를 대신 표현하므로 비균등 스쿼시를 적용하지 않는다
+  // (프리미티브 폴백 캐릭터만 기존처럼 스쿼시로 앉은 것을 위장).
   function placeCharacterOnSeat(character, seat){
     character.position.set(
       seat.x,
@@ -28,7 +30,9 @@
       seat.z + seat.face*CAR.seatSitOffset
     );
     character.rotation.y = seat.face>0 ? 0 : Math.PI;
-    character.scale.set(1,CAR.seatedScaleY,1);
+    if (!character.userData.characterModel){
+      character.scale.set(1,CAR.seatedScaleY,1);
+    }
   }
 
   // seat: 대상 좌석, msg: 착석 시 표시할 기본 메시지(양보받은 좌석이면 전용 메시지로 대체됨)
@@ -66,7 +70,16 @@
 
   function setPosture(p){
     G.posture = p;
-    // 시각적 구분
+    const characterModel = player.userData.characterModel;
+    if (characterModel){
+      if (p===Posture.SEATED) characterModel.playAction('sit', { fadeTime:0.2 });
+      else if (p===Posture.HOLDING_HANDLE) characterModel.playAction('handle', { fadeTime:0.2 });
+      // STANDING은 updatePlayer()의 로코모션 갱신이 담당(여기서 건드리면 매 프레임 갱신과 충돌).
+      // 자세가 바뀌었으므로 다음 프레임에 로코모션이 무조건 다시 적용되도록 캐시를 리셋.
+      characterModel.resetLocomotion();
+      return;
+    }
+    // 프리미티브 폴백: 시각적 구분
     if (p===Posture.SEATED){ player.scale.set(1,CAR.seatedScaleY,1); }
     else { player.scale.set(1,1,1); }
     // 손잡이: 오른팔 위로
@@ -87,6 +100,20 @@
     G.bagAttack.timer = 0;
     G.bagAttack.hasHit = false;
     AudioFX.play('swing');
+
+    const characterModel = player.userData.characterModel;
+    if (characterModel){
+      characterModel.playAction('punch', { loop: THREE.LoopOnce, clampWhenFinished:true, fadeTime:0.05 });
+      // Punch 클립의 자연 길이는 windup+strike+recovery(약 0.38초)보다 훨씬 길다.
+      // 판정 타이밍(resolveBagHit)은 이 재생 속도와 무관하게 그대로 유지되므로,
+      // 시각적으로만 얼추 맞도록 클립 길이에 맞춰 재생 속도를 조정한다(플레이스홀더 한계).
+      if (characterModel.currentAction){
+        const totalDur = BALANCE.bagWindupDuration + BALANCE.bagStrikeDuration + BALANCE.bagRecoveryDuration;
+        const clipDur = characterModel.currentAction.getClip().duration;
+        characterModel.currentAction.timeScale = clipDur>0 ? clipDur/totalDur : 1;
+      }
+      characterModel.resetLocomotion();
+    }
   }
 
   // 실제 판정: STRIKE 모션 중간 구간에서 단 한 번만 호출됨
@@ -113,10 +140,14 @@
   }
 
   // 가방 공격 모션(어깨/손 피벗)과 판정 타이밍을 매 프레임 갱신
+  // GLTF 경로에서는 시각 연출을 애니메이션 클립(tryBagAttack에서 트리거)이 전담하므로
+  // 아래 pivot 회전은 프리미티브 폴백 캐릭터에만 적용한다. 타이밍/판정(resolveBagHit) 로직은
+  // 두 경로 모두 동일 — 어느 쪽이든 이 함수를 그대로 통과한다.
   function updateBagAttack(dt){
     const ba = G.bagAttack;
-    const sp = player.userData.shoulderPivot;
-    const hp = player.userData.handPivot;
+    const isGLTF = !!player.userData.characterModel;
+    const sp = isGLTF ? null : player.userData.shoulderPivot;
+    const hp = isGLTF ? null : player.userData.handPivot;
 
     if (ba.phase==='IDLE'){
       if (sp) sp.rotation.z += (0 - sp.rotation.z)*Math.min(1, dt*10);
@@ -147,7 +178,10 @@
       const t = Math.min(1, ba.timer/dur);
       if (sp) sp.rotation.z = THREE.MathUtils.lerp(BALANCE.armStrikeZ, 0, t);
       if (hp) hp.rotation.z = THREE.MathUtils.lerp(0.45, 0, t);
-      if (ba.timer >= dur){ ba.phase='IDLE'; ba.timer=0; ba.hasHit=false; }
+      if (ba.timer >= dur){
+        ba.phase='IDLE'; ba.timer=0; ba.hasHit=false;
+        if (isGLTF) player.userData.characterModel.resetLocomotion(); // 다음 프레임에 idle/walk/run 복귀 보장
+      }
     }
   }
 
@@ -167,6 +201,7 @@
 
   function defeatVillain(v){
     v.defeated=true; v.state='DEFEATED';
+    destroyCharacterModel(v.mesh);
     scene.remove(v.mesh);
     if(v.zoneMesh) scene.remove(v.zoneMesh);
     // 퇴치와 공격 판정이 같은 프레임에 겹쳐도 플레이어 입력 잠금이 남지 않게 한다.
@@ -289,6 +324,12 @@
         G.facing.set(surgeDX/surgeDistance,surgeDZ/surgeDistance);
         player.rotation.y=Math.atan2(G.facing.x,G.facing.y);
       }
+    }
+
+    // GLTF 로코모션(idle/walk/run) 갱신 — 가방 공격(Punch) 재생 중에는 끼어들지 않음
+    if (player.userData.characterModel && G.bagAttack.phase==='IDLE'){
+      const locomotion = G.posture!==Posture.STANDING ? null : ((mx||mz) ? (keys['shift']?'run':'walk') : 'idle');
+      player.userData.characterModel.setLocomotion(locomotion);
     }
 
     updateBagAttack(dt);

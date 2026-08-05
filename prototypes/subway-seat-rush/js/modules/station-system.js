@@ -18,7 +18,11 @@ export const StationSystem = {
     });
 
     context.villains.forEach(villain => {
-      if (!villain.defeated && villain.mesh) context.scene.remove(villain.mesh);
+      if (!villain.defeated && villain.mesh) {
+        // scene.js가 window.destroyCharacterModel로 노출한 정리 훅(GLTF AnimationMixer 해제)
+        if (typeof window !== 'undefined' && window.destroyCharacterModel) window.destroyCharacterModel(villain.mesh);
+        context.scene.remove(villain.mesh);
+      }
       if (villain.zoneMesh) context.scene.remove(villain.zoneMesh);
     });
     context.villains.length = 0;

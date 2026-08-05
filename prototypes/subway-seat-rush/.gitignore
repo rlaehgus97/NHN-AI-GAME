@@ -1,0 +1,5 @@
+# Local Claude Code settings
+.claude/
+
+# Original, unoptimized source model (the optimized runtime asset is tracked under assets/models/)
+subway.glb

@@ -93,20 +93,23 @@
 
   <!-- Three.js (UMD 전역 빌드 — file:// 에서도 바로 실행 가능) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script type="module" src="js/modules/runtime.js?v=stage-systems-4"></script>
+  <!-- GLTF 캐릭터 파이프라인: r128과 동일 버전의 classic(전역) 로더 빌드 -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
+  <script type="module" src="js/modules/runtime.js?v=stage-systems-6"></script>
 
   <!-- 게임 스크립트: 의존 관계상 아래 순서로 로드 -->
   <script src="js/constants.js?v=stage-systems-4"></script>
   <script src="js/state.js?v=stage-systems-5"></script>
   <script src="js/audio.js?v=stage-systems-4"></script>
   <script src="js/effects.js"></script>
-  <script src="js/scene.js"></script>
-  <script src="js/hazards.js?v=stage-systems-5"></script>
-  <script src="js/entities.js?v=stage-systems-9"></script>
-  <script src="js/player.js?v=stage-systems-8"></script>
-  <script src="js/ai.js?v=stage-systems-8"></script>
-  <script src="js/systems.js?v=stage-systems-4"></script>
+  <script src="js/scene.js?v=stage-systems-30"></script>
+  <script src="js/hazards.js?v=stage-systems-6"></script>
+  <script src="js/entities.js?v=stage-systems-11"></script>
+  <script src="js/player.js?v=stage-systems-9"></script>
+  <script src="js/ai.js?v=stage-systems-9"></script>
+  <script src="js/systems.js?v=stage-systems-5"></script>
   <script src="js/ui.js?v=stage-systems-5"></script>
-  <script src="js/main.js?v=stage-systems-9"></script>
+  <script src="js/main.js?v=stage-systems-13"></script>
 </body>
 </html>

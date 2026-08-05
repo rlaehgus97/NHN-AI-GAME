@@ -6,7 +6,11 @@ export const MovementSystem = {
     const dz = target.z - entity.z;
     const distance = Math.hypot(dx, dz);
 
-    if (distance <= stopDistance) return true;
+    if (distance <= stopDistance) {
+      const idleModel = entity.mesh && entity.mesh.userData.characterModel;
+      if (idleModel) idleModel.setLocomotion('idle');
+      return true;
+    }
 
     const step = Math.min(distance - stopDistance, speed * dt);
     entity.x += dx / distance * step;
@@ -21,6 +25,10 @@ export const MovementSystem = {
       entity.mesh.position.x = entity.x;
       entity.mesh.position.z = entity.z;
       entity.mesh.rotation.y = Math.atan2(dx, dz);
+      // GLTF 캐릭터라면 걷는 동안만 Walking 크로스페이드(연출 개선, 선택사항).
+      // 프리미티브 폴백 캐릭터는 userData.characterModel이 없으므로 완전히 no-op.
+      const walkModel = entity.mesh.userData.characterModel;
+      if (walkModel) walkModel.setLocomotion('walk');
     }
     return false;
   },

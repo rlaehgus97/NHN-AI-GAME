@@ -81,6 +81,8 @@
   .btn { margin-top: 16px; background:#f39c12; color:#fff; border:none; border-radius: 12px;
         padding: 12px 26px; font-size: 17px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 0 #c87f0a; }
   .btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #c87f0a; }
+  .btn:disabled { background:#bdb8ae; box-shadow:0 4px 0 #948f86; cursor:default; opacity:.85; }
+  .btn:disabled:active { transform:none; box-shadow:0 4px 0 #948f86; }
   .btn.secondary { background:#7f8c8d; box-shadow:0 4px 0 #5f6a6b; margin-left:8px; }
   .ctrlList { text-align:left; font-size:13px; margin: 14px auto 0; max-width: 320px; line-height:1.8; }
   .ctrlList b { display:inline-block; min-width: 92px; color:#c0392b; }

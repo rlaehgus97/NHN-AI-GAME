@@ -133,7 +133,7 @@
       attemptSeatReward('당신의 선행을 지켜본 승객이 있습니다!');
     } else {
       addHonor(-BALANCE.ignoreSeatHonorPenalty);
-      if (yn){ scene.remove(yn.mesh); npcs = npcs.filter(n=>n!==yn); }
+      if (yn){ destroyCharacterModel(yn.mesh); scene.remove(yn.mesh); npcs = npcs.filter(n=>n!==yn); }
       showCenter('모른 척했습니다... 주변의 따가운 시선', true, 1.8);
     }
     G._yielder=null;

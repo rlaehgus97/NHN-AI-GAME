@@ -2,10 +2,15 @@
 /* entities.js — NPC 승객 및 빌런(진상 승객) 스폰 로직 */
 
   /* ============ NPC passengers ============ */
+  // Fall Guys풍 채도 높은 원색 팔레트 — competitor NPC마다 개체별로 무작위 배정해 다채로운 군중을 만든다.
+  const NPC_COLOR_PALETTE = [0xff5e5e,0xffb347,0xffe066,0x8ce99a,0x63e6be,0x66d9e8,0x74c0fc,0xb197fc,0xf783ac,0xffa8a8];
+
   // kind: 'competitor' (좌석 경쟁 NPC). 초기 탑승 방해를 줄이기 위해 배경(ambient) NPC는 스폰하지 않음.
   function spawnNPC(kind, x, z) {
-    const color = kind==='competitor' ? 0x9b8f80 : 0xa9adb2;
-    const mesh = makeCharacter(color, 0xe8c39e);
+    const color = kind==='competitor'
+      ? NPC_COLOR_PALETTE[Math.floor(Math.random()*NPC_COLOR_PALETTE.length)]
+      : 0xa9adb2;
+    const mesh = createCharacterGroup(color, color);
     mesh.position.set(x, 0, z);
     scene.add(mesh);
 
@@ -66,22 +71,22 @@
   /* ============ Villains ============ */
   function makeVillainMesh(type){
     if (type==='drunk'){
-      const g = makeCharacter(0xc0392b, 0xd98b7a);
+      const g = createCharacterGroup(0xc0392b, 0xd98b7a);
       g.add(makeTag('취객','#c0392b'));
       return g;
     }
     if(type==='broth'){
-      const g=makeCharacter(0xd35400,0xe8c39e);
+      const g=createCharacterGroup(0xd35400,0xe8c39e);
       const cup=new THREE.Mesh(new THREE.CylinderGeometry(.14,.11,.35,10),matClay(0xffc65c));
       cup.position.set(.48,.82,0); g.add(cup); g.userData.cup=cup;
       g.add(makeTag('어묵 국물','#d35400')); return g;
     }
     if(type==='climate'){
-      const g=makeCharacter(0x2980b9,0xe8c39e);
+      const g=createCharacterGroup(0x2980b9,0xe8c39e);
       g.add(makeTag('냉방 조작','#2980b9')); return g;
     }
     if(type==='umbrella'){
-      const g=makeCharacter(0x2471a3,0xe8c39e);
+      const g=createCharacterGroup(0x2471a3,0xe8c39e);
       const umbrella=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,1.45,8),matClay(0x34495e));
       umbrella.position.set(.5,.65,0); umbrella.rotation.z=.25; g.add(umbrella);
       g.userData.umbrella=umbrella; g.add(makeTag('젖은 우산','#2471a3')); return g;
