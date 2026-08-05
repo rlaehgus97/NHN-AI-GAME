@@ -5,9 +5,9 @@
   function initScene() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xb4b8bd);
-    scene.fog = new THREE.Fog(0xb4b8bd, 20, 38);
+    scene.fog = new THREE.Fog(0xb4b8bd, 24, 46);
 
-    camera = new THREE.PerspectiveCamera(52, window.innerWidth/window.innerHeight, 0.1, 200);
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 200);
     // 문쪽 벽(원경 벽)의 문/창문 프레임이 실제 높이로 완전히 렌더링되면서, 기존의 완만한 각도(약 39°)로는
     // 그 벽 근처 캐릭터가 프레임에 가려 안 보이는 문제가 생겼다 — 카메라를 더 위/가깝게 당겨 각도를
     // 가파르게(약 55°)해서 벽 높이가 시야를 가로막는 정도를 줄인다(updateCamera()도 동일하게 맞춤).
@@ -24,16 +24,21 @@
     const hemi = new THREE.HemisphereLight(0xdfe3e8, 0x8b8f95, 0.55);
     scene.add(hemi);
     const dir = new THREE.DirectionalLight(0xffffff, 0.45);
-    dir.position.set(6, 14, 8);
+    dir.position.set(6, 16, 9);
     dir.castShadow = true;
     dir.shadow.mapSize.set(1024,1024);
-    dir.shadow.camera.left=-16; dir.shadow.camera.right=16;
-    dir.shadow.camera.top=12; dir.shadow.camera.bottom=-12;
+    dir.shadow.camera.left=-20; dir.shadow.camera.right=20;
+    dir.shadow.camera.top=14; dir.shadow.camera.bottom=-14;
     scene.add(dir);
     const amb = new THREE.AmbientLight(0xffffff, 0.22);
     scene.add(amb);
 
     clock = new THREE.Clock();
+
+    // 마우스 포인터 → 월드 좌표 변환용
+    raycaster = new THREE.Raycaster();
+    pointerNDC = new THREE.Vector2(0,0);
+    groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
   }
 
   /* ============ Subway environment (서울 1호선 배색) ============ */
@@ -173,7 +178,7 @@
 
   function buildEnvironment() {
     envShellMeshes = [];
-    const carLen = 15.4, carWidth = 4.6;
+    const carLen = CAR_LENGTH, carWidth = CAR_WIDTH;
 
     // 바닥 (차량 + 승강장) — 실제 지하철 바닥에 가깝게 미세한 논슬립 질감만(과한 체커 패턴 억제)
     const floorMat = new THREE.MeshStandardMaterial({
@@ -191,8 +196,8 @@
     doorWarnStrip.position.set(0, 0.005, CAR.farWallZ+0.28); scene.add(doorWarnStrip);
     envShellMeshes.push(doorWarnStrip);
 
-    const platform = new THREE.Mesh(new THREE.BoxGeometry(carLen+1, 0.2, 3.4), matClay(0xd2d5da));
-    platform.position.set(0,-0.1, CAR.farWallZ - 1.9); platform.receiveShadow = true; scene.add(platform);
+    const platform = new THREE.Mesh(new THREE.BoxGeometry(carLen+1, 0.2, 3.8), matClay(0xd2d5da));
+    platform.position.set(0,-0.1, CAR.farWallZ - 2.1); platform.receiveShadow = true; scene.add(platform);
 
     // 원경 벽 (far wall) — 문 구멍 자리는 두 조각으로 분리. 실제 차량 내장재에 가까운 아이보리 톤 패널.
     const wallMat = new THREE.MeshStandardMaterial({
@@ -294,10 +299,10 @@
     scene.add(doorLeft); scene.add(doorRight);
 
     // 출구 표시(바닥 하이라이트) — 기본 숨김
-    exitMarker = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24),
+    exitMarker = new THREE.Mesh(new THREE.CircleGeometry(1.3, 24),
         new THREE.MeshStandardMaterial({ color:0x2ecc71, roughness:1, transparent:true, opacity:0.0 }));
     exitMarker.rotation.x = -Math.PI/2;
-    exitMarker.position.set(0, 0.02, CAR.farWallZ - 1.4);
+    exitMarker.position.set(0, 0.02, CAR.farWallZ - 1.6);
     scene.add(exitMarker);
 
     buildBenchesAndSeats();
@@ -308,55 +313,77 @@
     loadSubwayModel(envShellMeshes, endCapMeshes);
   }
 
-  /* ============ Seats and handles ============ */
+  /* ============ Seats and handles ============
+     좌석 15석 구성
+       - 원경(문쪽) 벤치 8석: 문 앞 공간(±1.9)을 비우고 좌우 4석씩
+       - 근경(반대쪽) 벤치 7석: 문이 없으므로 균등 배치
+     BALANCE.seatCount(15)와 seatDefs 길이가 반드시 일치해야 한다.
+  ========================================================== */
   function buildBenchesAndSeats() {
-    // 벤치(양쪽 벽) — 모델 로드에 성공하면 숨겨지는 폴백용 프리미티브(envShellMeshes에 등록).
-    // 모델이 로드되면 실제(폭 넓힌) 좌석이 그 자리를 대신 보여준다.
+    const benchLen = CAR_LENGTH - 1.4;
     const benchMat = matClay(0xe4dcc8);
-    [ -1.75, 1.75 ].forEach(z=>{
-      const bench = new THREE.Mesh(new THREE.BoxGeometry(13.6, 0.45, 0.9), benchMat);
-      bench.position.set(0, 0.22, z); bench.receiveShadow=true; scene.add(bench);
-      envShellMeshes.push(bench);
+    [ -CAR.benchZ, CAR.benchZ ].forEach(z=>{
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(benchLen, 0.5, 1.05), benchMat);
+      bench.position.set(0, 0.25, z); bench.receiveShadow=true; scene.add(bench);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(benchLen, 0.75, 0.2), benchMat);
+      back.position.set(0, 0.63, z + (z<0? -0.42 : 0.42)); scene.add(back);
+      envShellMeshes.push(bench, back);
     });
 
-    // 좌석 10개 — scale.x=2.0 적용 후 벤치의 실제 1인당 칸 너비(0.478*2.0≈0.956) 그대로
-    // 좌석 눈금에 딱 맞춰 배치(문쪽 벤치에서 문 구역과 안 겹치는 3칸 + 반대쪽 벤치에서 2칸).
-    const seatDefs = [
-      { x:-4.28, z:-1.7, face: 1 },
-      { x:-3.33, z:-1.7, face: 1 },
-      { x:-2.37, z:-1.7, face: 1 },
-      { x: 2.39, z:-1.7, face: 1 },
-      { x: 3.34, z:-1.7, face: 1 },
-      { x:-4.28, z: 1.7, face:-1 },
-      { x:-3.33, z: 1.7, face:-1 },
-      { x:-2.37, z: 1.7, face:-1 },
-      { x: 2.39, z: 1.7, face:-1 },
-      { x: 3.34, z: 1.7, face:-1 }
-    ];
-    // 실제 지하철처럼 각 줄의 첫 좌석(차량 안쪽 끝)은 노약자석(노란색), 나머지는 일반석(주황빛)
-    const SEAT_GENERAL_COLOR = 0xd98c4a;
-    const SEAT_PRIORITY_COLOR = 0xffd400;
+    const farRow  = [-7.9, -6.2, -4.5, -2.8, 2.8, 4.5, 6.2, 7.9];   // 문쪽 벤치 8석
+    const nearRow = [-7.2, -4.8, -2.4, 0.0, 2.4, 4.8, 7.2];          // 반대쪽 벤치 7석
+    const seatDefs = [];
+    farRow.forEach(x=> seatDefs.push({ x, z:-CAR.seatZ, face: 1 }));
+    nearRow.forEach(x=> seatDefs.push({ x, z: CAR.seatZ, face:-1 }));
+
+    seatPickables.length = 0;
+
     seatDefs.forEach((d,i)=>{
-      const isPriority = (i % 5) === 0;
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.12, 0.8), matClay(isPriority ? SEAT_PRIORITY_COLOR : SEAT_GENERAL_COLOR));
-      mesh.position.set(d.x, 0.5, d.z); scene.add(mesh);
+      const isPriority = i===0 || i===farRow.length;
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.5, 0.14, 0.85),
+        matClay(isPriority ? 0xffd400 : 0xd98c4a)
+      );
+      mesh.position.set(d.x, 0.55, d.z); mesh.receiveShadow=true; scene.add(mesh);
       envShellMeshes.push(mesh);
-      const point = { x: d.x, z: d.z + d.face*0.95 }; // 통로쪽 상호작용 위치
-      seats.push({
-        mesh, x:d.x, z:d.z, face:d.face, occupied:false, occupant:null,
+
+      // 빈자리 강조용 평면(좌석 위) — 색/투명도를 매 프레임 갱신
+      const highlight = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.58, 0.94),
+        new THREE.MeshBasicMaterial({ color:0xfff2c4, transparent:true, opacity:0, depthWrite:false })
+      );
+      highlight.rotation.x = -Math.PI/2;
+      highlight.position.set(d.x, 0.64, d.z);
+      scene.add(highlight);
+
+      // 클릭 판정용 투명 박스(좌석보다 조금 크게 잡아 클릭을 쉽게 함)
+      const pick = new THREE.Mesh(
+        new THREE.BoxGeometry(1.72, 1.25, 1.5),
+        new THREE.MeshBasicMaterial({ transparent:true, opacity:0, depthWrite:false })
+      );
+      pick.position.set(d.x, 0.62, d.z + d.face*0.3);
+      scene.add(pick);
+
+      const point = { x: d.x, z: d.z + d.face*CAR.seatInteractOffset }; // 통로쪽 상호작용 위치
+      const seat = {
+        mesh, highlight, pick, x:d.x, z:d.z, face:d.face, occupied:false, occupant:null,
         interactionPoint:point,
-        captureProgress:0,      // 플레이어 점유 게이지 (0~100)
+        captureProgress:0,      // 플레이어 점유 게이지 (0~100, 경쟁 중에만 사용)
         npcProgress:0,          // 현재 경쟁 중인 NPC의 점유 게이지 (0~100)
         npcClaimantRef:null,    // npcProgress를 채우고 있는 NPC 참조
         reservedFor:null,       // 'player' — 빌런 퇴치 보상으로 예약된 좌석
         reservedTimer:0
-      });
+      };
+      pick.userData.seatRef = seat;
+      mesh.userData.seatRef = seat;
+      seats.push(seat);
+      seatPickables.push(pick);
     });
   }
 
   function buildHandles() {
     // 실제 지하철 손잡이는 은색 스테인리스 + 노란/주황 고무 그립 — 링만 살짝 포인트 컬러
-    [ -4.5, -1.5, 1.5, 4.5 ].forEach((x)=>{
+    [ -7.5, -4.5, -1.5, 1.5, 4.5, 7.5 ].forEach(x=>{
       const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.18,0.05,8,16), matClay(0xffbf3f));
       mesh.position.set(x, 2.1, 0); mesh.rotation.x = Math.PI/2 * 0; scene.add(mesh);
       // 손잡이 끈(스테인리스)
@@ -367,6 +394,45 @@
       const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.03,10), matMetal(0xc7cbd0));
       mount.position.set(x, 2.565, 0); scene.add(mount);
       handles.push({ mesh, x, z:0, occupied:false, occupant:null });
+    });
+  }
+
+  /* ============ 좌석 하이라이트 ============ */
+  function isSeatTargetedByNPC(seat){
+    for (let i=0;i<npcs.length;i++){
+      const n = npcs[i];
+      if (!n.seated && !n.disembarking && n.targetSeat===seat) return true;
+    }
+    return seat.npcClaimantRef ? !seat.npcClaimantRef.seated : false;
+  }
+
+  function seatHighlightStyle(seat){
+    if (seat.occupied) return null;
+    if (G.seatCompetitionActive && G.contestedSeat===seat)
+      return { color:0xff5e57, opacity:0.75, emissive:0x6b1f1b };
+    if (G.targetSeat===seat)
+      return { color:0x4aa3ff, opacity:0.68, emissive:0x11395e };
+    if (seat.reservedFor==='player')
+      return { color:0x2ecc71, opacity:0.66, emissive:0x13512b };
+    if (isSeatTargetedByNPC(seat))
+      return { color:0xff9f43, opacity:0.52, emissive:0x53300e };
+    if (G.hoveredSeat===seat)
+      return { color:0xffe08a, opacity:0.62, emissive:0x4d3d16 };
+    return { color:0xfff2c4, opacity:0.30, emissive:0x272009 };
+  }
+
+  function updateSeatHighlights(){
+    const pulse = 0.86 + Math.sin(performance.now()*0.005)*0.14;
+    seats.forEach(seat=>{
+      const style = seatHighlightStyle(seat);
+      if (!style){
+        seat.highlight.material.opacity = 0;
+        seat.mesh.material.emissive.setHex(0x000000);
+        return;
+      }
+      seat.highlight.material.color.setHex(style.color);
+      seat.highlight.material.opacity = style.opacity*pulse;
+      seat.mesh.material.emissive.setHex(style.emissive);
     });
   }
 
@@ -386,7 +452,6 @@
     arm.position.set(0.42*side, 0.56, 0);
     return arm;
   }
-
   function makeCharacter(bodyColor, headColor) {
     const g = new THREE.Group();
     const bodyMat = matClay(bodyColor);

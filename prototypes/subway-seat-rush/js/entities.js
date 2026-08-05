@@ -26,7 +26,7 @@
     const npc = {
       mesh, kind, targetSeat:null, seated:false, seatRef:null,
       x, z, standSpot:{x,z},
-      boardTarget: { x, z: CAR.farWallZ+0.25 }, // 문턱을 넘으면 바로 객차 안쪽으로 분산
+      boardTarget: { x, z: CAR.farWallZ+0.35 }, // 문턱을 넘으면 바로 객차 안쪽으로 분산
       boardingAtStation:false, boardingDelay:0, boardingEntered:false,
       entryTarget:null, initialSettling:false,
       isYielder:false, wobble:Math.random()*6,
@@ -38,7 +38,7 @@
       seatApproachPhase:null,
       avoidSeatTimer:0, fleeingVillain:false,
       avoidVillainTarget:null, avoidVillainTimer:0,
-      disembarking:false, disembarkPhase:null, exitTargetX:0, exitQueueZ:CAR.farWallZ+0.65
+      disembarking:false, disembarkPhase:null, exitTargetX:0, exitQueueZ:CAR.farWallZ+0.7
     };
     npcs.push(npc);
     return npc;
@@ -46,21 +46,23 @@
 
   function spawnPassengers() {
     // 좌석 경쟁 NPC: 승강장에 플레이어와 함께 대기 (문이 열려야 탑승 가능)
-    // low/empty 분기가 다시 사용되더라도 시작 승객이 완전히 사라지지 않도록 최소 4명을 둔다.
-    const count = G.initialCrowd==='empty' ? 0 : BALANCE.competitorCount;
-    const doorLanes=[-1.1,-0.37,0.37,1.1];
+    // 좌석 15석 + 승객 17명(플레이어 포함) → 항상 2명 이상이 서서 가게 된다.
+    // (G.initialCrowd는 중간역 승·하차 흐름을 정하는 데만 쓰고, 초기 승객 수는 항상 고정한다.
+    //  이전에는 'empty'일 때 0명이 되어 자리 경쟁 자체가 발생하지 않는 문제가 있었다.)
+    const count = BALANCE.competitorCount;
+    const doorLanes=[-1.45,-0.5,0.5,1.45];
     for (let i=0;i<count;i++){
       const x=doorLanes[i%doorLanes.length];
       const row=Math.floor(i/doorLanes.length);
       const z=CAR.platformZ+0.6-row*0.75;
       const n=spawnNPC('competitor',x,z);
-      n.boardTarget={x,z:CAR.farWallZ+0.75};
-      n.boardingDelay=i*0.13;
+      n.boardTarget={x,z:CAR.farWallZ+0.85};
+      n.boardingDelay=i*0.12;
       const side=i%2===0?-1:1;
       const rank=Math.floor(i/2);
-      const staggerZ=[-.68,.08,.68][rank%3];
+      const staggerZ=[-1.05,0,1.05][rank%3];
       n.entryTarget={
-        x:THREE.MathUtils.clamp(side*(1+rank*.92),CAR.xMin+.45,CAR.xMax-.45),
+        x:THREE.MathUtils.clamp(side*(1.4+rank*1.02),CAR.xMin+.5,CAR.xMax-.5),
         z:staggerZ
       };
       n.initialSettling=true;

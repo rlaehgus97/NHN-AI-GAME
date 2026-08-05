@@ -1,8 +1,12 @@
 "use strict";
-/* main.js — 게임 상태 전환, 메인 루프, 입력 처리, 부트스트랩 */
+/* main.js — 게임 상태 전환, 메인 루프, 마우스/키 입력 처리, 부트스트랩 */
 
   /* ============ State transitions ============ */
   function enterState(s){
+    // 탑승 시작 / 목적지 도착으로 넘어갈 때는 좌석 선택과 경쟁 상태를 완전히 정리한다.
+    // (SEAT_RUSH → TRAVELING 전환은 이동 중인 좌석을 유지해 도착 후 착석할 수 있게 둔다)
+    if (s===GameState.BOARDING || s===GameState.ARRIVAL) clearPlayerSeatTarget();
+
     G.state = s; G.stateTimer = 0;
     if (s===GameState.BOARDING){
       AudioFX.play('approach');
@@ -12,16 +16,15 @@
       player.position.set(0.3, 0, CAR.platformZ + 0.3);
       player.rotation.y = 0;
       setPosture(Posture.STANDING);
-      showCenter('지하철이 도착했습니다. 탑승하세요!', false, 1.6);
+      showCenter('지하철이 도착했습니다. 마우스를 누른 채 탑승하세요!', false, 1.8);
     }
     else if (s===GameState.SEAT_RUSH){
       G.seatsSettled=false;
       G.seatsSettledAt=0;
-      showCenter('좌석 경쟁! 빈자리로!', false, 1.4);
+      showCenter('빈 좌석을 클릭해 앉으세요!', false, 1.6);
     }
     else if (s===GameState.TRAVELING){
       document.body.classList.add('train-moving');
-      UI.seatWrap.classList.remove('show');
       closeDoors();
       // 안전장치: 문이 닫히는 순간 아직 승강장에 남아있으면 차량 안으로 이동시킴
       if (player.position.z <= CAR.farWallZ){
@@ -45,7 +48,7 @@
       showCenter('목적지입니다. 문으로 이동하세요!', false, 2.2);
       G.arrivalTimeLeft = BALANCE.arrivalExitDuration;
       // 앉아있거나 손잡이면 자동 해제 안내(수동 E 가능) — 여기선 자동 기립
-      if (G.posture===Posture.SEATED) standUpFromSeat();
+      if (G.posture===Posture.SEATED) standUpFromSeat('arrival');
       if (G.posture===Posture.HOLDING_HANDLE) releaseHandle();
 
       // 일부 승객도 함께 하차: 무작위로 선정해 문 쪽으로 내보낸다 (앉아있었다면 좌석도 비움)
@@ -69,6 +72,12 @@
     doorRight.position.x += (targetR - doorRight.position.x)*Math.min(1,dt*5);
   }
 
+  // 스테이지 타임라인 값(모듈/폴백 어느 쪽이든 동일). 만약 둘 다 없으면 기본값으로 동작한다.
+  function stageTimeline(){
+    if (window.GameModules && window.GameModules.stage) return window.GameModules.stage.timeline;
+    return { destinationArrival: BALANCE.stageDuration-5, doorsClose: BALANCE.stageDuration };
+  }
+
   function advanceStageTimeline(dt){
     G.stageElapsed+=dt;
     G.timeLeft=Math.max(0,BALANCE.stageDuration-G.stageElapsed);
@@ -82,7 +91,7 @@
     switch(G.state){
       case GameState.BOARDING: {
         advanceStageTimeline(dt);
-        // 1) 문 닫힌 채 대기(도착 메시지) → 2) 문 열림 → 3) 탑승 진입 → 4) 좌석 경쟁 시작
+        // 1) 문 닫힌 채 대기(도착 메시지) → 2) 문 열림 → 3) 탑승 진입 → 4) 좌석 선택 시작
         if (!G.doorsOpen && G.stateTimer >= BALANCE.boardingApproachDuration){
           openDoors();
           showCenter('문이 열렸습니다! 탑승하세요', false, 1.2);
@@ -111,8 +120,9 @@
               moveNPCTo(n,n.boardTarget.x,n.boardTarget.z,dt);
             }
           }});
-          npcs.forEach(n=>{if(!n.seated) applySmoothNPCSeparation(n,dt,.82);});
+          npcs.forEach(n=>{if(!n.seated) applySmoothNPCSeparation(n,dt,.95);});
         }
+        updateInteractPrompt();
         if (G.doorsOpen && G.stateTimer >= BALANCE.boardingApproachDuration + BALANCE.boardingEntryDuration){
           enterState(GameState.SEAT_RUSH);
         }
@@ -130,7 +140,13 @@
         }
         const settleVisible=G.seatsSettled &&
           G.stateTimer-G.seatsSettledAt>=BALANCE.seatSettleLeadTime;
-        if (G.stateTimer >= BALANCE.seatRushDuration || (allOccupied && settleVisible)){
+        // 플레이어가 좌석으로 이동 중이거나 경쟁 중이면 짧은 유예 시간을 준다.
+        const playerCommitted = G.seatCompetitionActive ||
+          (G.autoMovingToSeat && G.targetSeat && !G.targetSeat.occupied);
+        updateInteractPrompt();
+        const graceOver = G.stateTimer >= BALANCE.seatRushDuration + BALANCE.seatRushGraceTime;
+        const timeUp = G.stateTimer >= BALANCE.seatRushDuration;
+        if (graceOver || ((timeUp || (allOccupied && settleVisible)) && !playerCommitted)){
           enterState(GameState.TRAVELING);
         }
         break;
@@ -151,7 +167,14 @@
         }
         updateInteractPrompt();
         updateSpecialInteractions(dt);
-        updateSeatCaptureGauge(dt); // 이동 중에도 빈자리(양보받은 자리 등)는 SPACE 연타로만 앉을 수 있음
+        // 자리 양보 이벤트: 일정 시간 이후 플레이어가 앉아 있으면 1회 발생
+        if (!G.flags.yieldDone && G.stageElapsed>=BALANCE.yieldMinTime && G.posture===Posture.SEATED){
+          openYieldEvent();
+        }
+        // 안전장치: 어떤 이유로든 디렉터의 DESTINATION_ARRIVAL을 놓쳐도 목적지에는 반드시 도착한다.
+        if (G.stageElapsed >= stageTimeline().destinationArrival + 1){
+          enterState(GameState.ARRIVAL);
+        }
         break;
       }
       case GameState.EVENT: {
@@ -174,6 +197,13 @@
         } else if (G.arrivalTimeLeft<=0){
           endGame(false, '제한 시간 안에 하차하지 못했습니다.');
         }
+        // 안전장치: 도착 상태가 비정상적으로 길어지면 문이 닫힌 것으로 처리한다.
+        G.stageElapsed += dt;
+        if (G.stageElapsed >= stageTimeline().doorsClose + 2 &&
+            G.state===GameState.ARRIVAL){
+          closeDoors();
+          endGame(false, '문이 닫힐 때까지 하차하지 못했습니다.');
+        }
         // 시간 표시 재활용
         G.timeLeft = G.arrivalTimeLeft;
         break;
@@ -183,9 +213,24 @@
 
   function updateStageDirector(dt){
     if (!window.GameModules) return;
-    const actions = window.GameModules.director.update(dt);
+    const actions = window.GameModules.director.update(dt, {
+      state:G.state,
+      posture:G.posture,
+      elapsed:G.stageElapsed
+    });
     actions.forEach(action=>{
-      if (action.type==='EVENT_SLOT'){
+      if (action.type==='FORCE_STAND'){
+        console.info('[AI Director][decision]', action.type, action);
+        if (G.state===GameState.TRAVELING && G.posture===Posture.SEATED){
+          standUpFromSeat('ai-director');
+          showCenter('오래 앉아 있어 잠시 일어납니다.', true, 1.4);
+        }
+      } else if (action.type==='LOCK_SEATING'){
+        console.info('[AI Director][decision]', action.type, action);
+        clearPlayerSeatTarget();
+        if (G.posture===Posture.SEATED) standUpFromSeat('ai-director');
+        showCenter('착석과 기상을 반복해 잠시 착석할 수 없습니다.', true, 1.6);
+      } else if (action.type==='EVENT_SLOT'){
         if (action.eventId==='sudden-stop'){
           triggerSuddenStopWarn();
           G.pendingSuddenStop = 3; // 12초 예고 → 15초 결과
@@ -245,15 +290,15 @@
 
     if (G.midStationFlow==='boarding'){
       const boardingCount = 10;
-      const lanes=[-1.1,-0.37,0.37,1.1];
+      const lanes=[-1.45,-0.5,0.5,1.45];
       const crowdSpots=[
-        {x:-4.5,z:-.48},{x:-2.2,z:.48},{x:0,z:-.48},{x:2.2,z:.48},{x:4.5,z:-.48}
+        {x:-5.6,z:-.6},{x:-2.8,z:.6},{x:0,z:-.6},{x:2.8,z:.6},{x:5.6,z:-.6}
       ];
       for(let i=0;i<boardingCount;i++){
         const x=lanes[i%lanes.length];
         const row=Math.floor(i/lanes.length);
         const n=spawnNPC('competitor',x,CAR.platformZ+0.45-row*0.72);
-        n.boardTarget={x,z:CAR.farWallZ+0.25};
+        n.boardTarget={x,z:CAR.farWallZ+0.35};
         n.boardingAtStation=true;
         n.boardingDelay=i*0.1;
         if(i<5){
@@ -298,6 +343,9 @@
   function endGame(success, reason){
     if (G.state===GameState.CLEAR || G.state===GameState.GAME_OVER) return;
     G.state = success ? GameState.CLEAR : GameState.GAME_OVER;
+    if (window.PhoneMiniGames) PhoneMiniGames.close(true);
+    clearPlayerSeatTarget();
+    G.pointerHeld=false; leftMouseDown=false; G.hoveredSeat=null;
     document.body.classList.remove('train-moving');
     AudioFX.stop(); AudioFX.play(success?'success':'fail');
     const ov = document.getElementById('resultOverlay');
@@ -324,6 +372,8 @@
       s.captureProgress=0; s.npcProgress=0; s.npcClaimantRef=null;
       s.reservedFor=null; s.reservedTimer=0;
       s.mesh.scale.set(1,1,1);
+      s.mesh.material.emissive.setHex(0x000000);
+      s.highlight.material.opacity=0;
     });
     handles.forEach(h=>{ h.occupied=false; h.occupant=null; });
     exitMarker.material.opacity = 0.0;
@@ -337,13 +387,19 @@
     document.getElementById('startScreen').classList.add('hidden');
     document.getElementById('resultOverlay').classList.add('hidden');
     document.getElementById('eventOverlay').classList.add('hidden');
+    if (window.PhoneMiniGames) PhoneMiniGames.reset();
     clearDynamicObjects();
-    // 상태 초기화
+    // 상태 초기화 (좌석 선택/hover/경쟁 상태 포함)
     resetGameData();
     resetCenterMessages();
-    // 키 입력 초기화
+    // 입력 초기화
     for (const k in keys) keys[k]=false;
     leftMouseDown=false;
+    G.pointerHeld=false;
+    G.hoveredSeat=null;
+    UI.seatWrap.classList.remove('show');
+    UI.seatFill.style.width='0%';
+    if (UI.seatRivalFill) UI.seatRivalFill.style.width='0%';
     // 플레이어 초기화
     setPosture(Posture.STANDING);
     player.scale.set(1,1,1);
@@ -358,13 +414,13 @@
     enterState(GameState.BOARDING);
   }
 
-  /* ============ Camera follow ============ */
+  /* ============ Camera follow (넓어진 차량에 맞춰 조정) ============ */
   function updateCamera(dt){
     const p = player.position;
     let sx=0, sz=0;
     if (G.shake>0){ G.shake-=dt*1.5; const s=Math.max(0,G.shake);
       sx=(Math.random()-0.5)*s; sz=(Math.random()-0.5)*s; }
-    const camX = THREE.MathUtils.clamp(p.x, -3.5, 3.5);
+    const camX = THREE.MathUtils.clamp(p.x, -4.8, 4.8);
     const tx = camX + sx;
     camera.position.x += (tx - camera.position.x)*Math.min(1,dt*4);
     camera.position.y = 11.5; // initScene()과 동일 — 문쪽 벽 근처 캐릭터가 벽에 가려 안 보이던 문제 보완
@@ -375,17 +431,21 @@
   /* ============ Animation loop ============ */
   function animate(){
     requestAnimationFrame(animate);
-    let dt = clock.getDelta();
-    if (dt>0.05) dt=0.05; // 탭 비활성 등으로 큰 dt 방지
+    let realDt = clock.getDelta();
+    if (realDt>0.05) realDt=0.05; // 탭 비활성 등으로 큰 dt 방지
+    if (window.PhoneMiniGames) PhoneMiniGames.update(realDt);
+    const dt = G.phoneOpen ? realDt*BALANCE.phoneWorldTimeScale : realDt;
 
     // READY(시작 화면) 상태에서는 플레이어/NPC/타이머/이벤트가 절대 진행되지 않음
     if (G.state!==GameState.READY && G.state!==GameState.CLEAR && G.state!==GameState.GAME_OVER){
       updatePlayer(dt);
+      updateSeatIntent(dt);   // 좌석 도착 판정 / 경쟁 진행 / 게이지 표시
       resolveNPCPush(dt);
       updateStates(dt);
     }
     if (window.GameModules && window.GameModules.CharacterAssets) window.GameModules.CharacterAssets.updateAll(dt);
     updateDoors(dt);
+    updateSeatHighlights();
     VisualFX.update(dt);
     updateCamera(dt);
 
@@ -396,47 +456,125 @@
     renderer.render(scene, camera);
   }
 
+  /* ============ 마우스 포인터 → 월드 좌표 ============ */
+  let _pointerHit = null;
+
+  function updatePointerFromEvent(e){
+    if (!raycaster || !camera) return;
+    if (!_pointerHit) _pointerHit = new THREE.Vector3();
+    const rect = renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    pointerNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerNDC, camera);
+    if (raycaster.ray.intersectPlane(groundPlane, _pointerHit)){
+      G.pointerWorld.x = _pointerHit.x;
+      G.pointerWorld.z = _pointerHit.z;
+      G.pointerWorld.valid = true;
+    } else {
+      G.pointerWorld.valid = false;
+    }
+  }
+
+  // 1순위: 클릭 가능한 좌석
+  function pickSeatUnderPointer(){
+    if (!seatPickables.length) return null;
+    const hits = raycaster.intersectObjects(seatPickables, false);
+    for (let i=0;i<hits.length;i++){
+      const seat = hits[i].object.userData.seatRef;
+      if (seat) return seat;
+    }
+    return null;
+  }
+
+  // 2순위: 클릭 가능한 빌런
+  // 빌런 메시(entities.js/scene.js)는 원본 그대로 두기 위해, 레이캐스트 대신
+  // "포인터가 가리키는 바닥 좌표"와 빌런 위치의 거리로 판정한다.
+  function pickVillainUnderPointer(){
+    if (!G.pointerWorld.valid) return null;
+    let best=null, bd=BALANCE.villainClickRadius;
+    villains.forEach(v=>{
+      if (v.defeated) return;
+      const d = Math.hypot(v.x-G.pointerWorld.x, v.z-G.pointerWorld.z);
+      if (d<bd){ bd=d; best=v; }
+    });
+    return best;
+  }
+
+  function updateHoveredSeat(){
+    if (!isWorldInputAllowed()){ G.hoveredSeat=null; return; }
+    const seat = pickSeatUnderPointer();
+    G.hoveredSeat = (seat && !seat.occupied) ? seat : null;
+  }
+
   /* ============ Input ============ */
   function onKeyDown(e){
-    // 시작 화면(READY)에서는 모든 입력을 완전히 차단
-    if (G.state===GameState.READY) return;
-
     const k = e.key.toLowerCase();
+    if (k==='p' && window.PhoneMiniGames){
+      e.preventDefault();
+      PhoneMiniGames.toggle();
+      return;
+    }
+    if (G.phoneOpen && window.PhoneMiniGames){
+      e.preventDefault();
+      PhoneMiniGames.keyDown(k);
+      return;
+    }
+    // 시작/결과 화면에서는 게임 입력을 완전히 차단
+    if (G.state===GameState.READY || G.state===GameState.CLEAR || G.state===GameState.GAME_OVER) return;
+
     // 이벤트 모달 중 1/2 선택
     if (G.state===GameState.EVENT){
       if (k==='1'){ resolveYield(1); return; }
       if (k==='2'){ resolveYield(2); return; }
       return; // 그 외 입력 차단
     }
-    if (keys[k]) { return; } // 반복 방지 일부
+    if (keys[k]) { return; } // 연타만 인정 (누르고 있어도 반복 입력되지 않음)
     keys[k]=true;
 
-    if ((G.state===GameState.SEAT_RUSH || G.state===GameState.TRAVELING) && k===' '){
-      // 좌석은 항상 SPACE 연타로만 앉을 수 있음(E로 즉시 앉는 경로 없음).
-      // SEAT_RUSH에서는 경쟁 NPC 게이지와 동시에 채워지고, TRAVELING에서는(예: 양보받은 좌석)
-      // 경쟁자 없이 게이지만 채우면 되지만 동일하게 SPACE 입력이 필요하다.
-      const seat = nearestEmptySeat(player.position.x, player.position.z, 1.3);
-      if (seat && G.posture===Posture.STANDING && G.risingTimer<=0 && !seat.occupied){
-        if (window.GameModules.SeatCompetition.playerPress(
-          seat, BALANCE.seatCaptureGainPerPress
-        )){
-          sitOnSeat(seat, '자리 차지 성공!');
-        }
-      }
+    // SPACE: 실제 자리 경쟁이 진행 중일 때만 게이지가 오른다.
+    if (k===' '){
+      e.preventDefault();
+      pressSeatCapture();
+      return;
     }
     if (k==='e'){ handleInteractKey(); }
     if (k==='f'){ tryBagAttack(); }
   }
   function onKeyUp(e){ keys[e.key.toLowerCase()]=false; }
 
-  function onMouseDown(e){
-    if (G.state===GameState.READY) return;
-    if (e.button===0){ leftMouseDown=true;
-      if (G.state===GameState.TRAVELING || G.state===GameState.ARRIVAL) tryBagAttack();
+  /* 좌클릭 판정 순서: 좌석 → 빌런 → 바닥
+     캔버스에서만 받으므로 HTML 버튼/HUD 클릭은 게임 입력이 되지 않는다. */
+  function onCanvasPointerDown(e){
+    if (e.button!==0) return;
+    if (!isWorldInputAllowed()) return;
+    e.preventDefault();
+    updatePointerFromEvent(e);
+
+    const seat = pickSeatUnderPointer();
+    if (seat){ handleSeatClick(seat); return; }
+
+    const villain = pickVillainUnderPointer();
+    if (villain){
+      tryBagAttack();
+      G.pointerHeld = true; leftMouseDown = true;
+      return;
     }
+    handleGroundClick();
   }
-  function onMouseUp(e){ if(e.button===0) leftMouseDown=false; }
-  function onBlur(){ for(const k in keys) keys[k]=false; leftMouseDown=false; }
+
+  function onPointerMove(e){
+    updatePointerFromEvent(e);
+    updateHoveredSeat();
+  }
+  function onPointerUp(e){
+    if (e && e.button!==undefined && e.button!==0) return;
+    G.pointerHeld=false; leftMouseDown=false;
+  }
+  function onBlur(){
+    for(const k in keys) keys[k]=false;
+    G.pointerHeld=false; leftMouseDown=false; G.hoveredSeat=null;
+  }
 
   function onResize(){
     camera.aspect = window.innerWidth/window.innerHeight;
@@ -449,32 +587,15 @@
     if (bindEventsOnce._done) return; bindEventsOnce._done=true;
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mouseup', onMouseUp);
+    // 이동/좌석 클릭은 캔버스에서만 (HUD·버튼 클릭과 분리)
+    renderer.domElement.style.touchAction = 'none';
+    renderer.domElement.addEventListener('pointerdown', onCanvasPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
     window.addEventListener('blur', onBlur);
     window.addEventListener('resize', onResize);
-    // 좌클릭 방향 조준 방지용: canvas 우클릭 메뉴 차단
-    // ---- 임시 진단 기능: 우클릭한 지점의 3D 물체 이름을 화면에 표시(정체불명 오브젝트 찾기용) ----
-    renderer.domElement.addEventListener('contextmenu', e=>{
-      e.preventDefault();
-      const rect = renderer.domElement.getBoundingClientRect();
-      const ndc = new THREE.Vector2(
-        ((e.clientX-rect.left)/rect.width)*2-1,
-        -((e.clientY-rect.top)/rect.height)*2+1
-      );
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(ndc, camera);
-      const hits = ray.intersectObjects(scene.children, true);
-      if (hits.length){
-        const obj = hits[0].object;
-        const chain = [];
-        for (let o=obj; o; o=o.parent){ if (o.name) chain.unshift(o.name); }
-        console.log('[진단] 우클릭 물체:', chain.join(' > '), obj);
-        showCenter('진단: ' + (chain.join(' > ') || '(이름 없음)'), false, 4);
-      } else {
-        showCenter('진단: 클릭 위치에 물체 없음', false, 2);
-      }
-    });
+    renderer.domElement.addEventListener('contextmenu', e=>e.preventDefault());
 
     document.getElementById('startBtn').addEventListener('click', startNewGame);
     document.getElementById('restartBtn').addEventListener('click', startNewGame);

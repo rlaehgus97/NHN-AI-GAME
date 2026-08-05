@@ -73,7 +73,7 @@
     candidateSeat.reservedFor = 'player';
     candidateSeat.reservedTimer = BALANCE.seatReservationDuration;
 
-    showCenter(introText+'\n승객이 자리를 양보했습니다.', false, 2.4);
+    showCenter(introText+'\n승객이 양보한 초록색 자리를 클릭하세요!', false, 2.4);
   }
 
   // 예약된 좌석의 남은 시간을 갱신하고, 시간이 지나면 예약 해제(다른 NPC도 다시 앉을 수 있게 됨)
@@ -102,6 +102,7 @@
   =============================================================================== */
   function openYieldEvent(){
     G.flags.yieldDone = true;
+    clearPlayerSeatTarget();
     G.eventReturnState = G.state;
     G.state = GameState.EVENT;
     // 양보 NPC 등장 (플레이어 앞)
@@ -125,7 +126,7 @@
       G.goodDeeds++;
       applyKindnessBuff();               // 즉시 회복 대신, 이후 체력 소모가 완화되는 선행 버프
       const s = G.occupiedSeat;
-      standUpFromSeat();
+      standUpFromSeat('yield');
       if (s && yn){ s.occupied=true; s.occupant=yn; yn.seated=true; yn.seatRef=s;
         placeCharacterOnSeat(yn.mesh, s); yn.x=yn.mesh.position.x; yn.z=yn.mesh.position.z; }
       showCenter('자리를 양보했습니다. 명예 +'+BALANCE.yieldSeatHonorReward, false, 1.8);

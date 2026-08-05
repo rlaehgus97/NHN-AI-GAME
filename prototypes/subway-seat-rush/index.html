@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>지옥철 생존기</title>
-<link rel="stylesheet" href="style.css" />
+<link rel="stylesheet" href="style.css?v=phone-games-7" />
 </head>
 <body>
   <div id="canvasWrap"></div>
@@ -22,6 +22,7 @@
     </div>
     <div class="hudBlock">
       <div id="postureTag">자세: 서 있음</div>
+      <div id="seatStatus">빈자리를 클릭해서 착석</div>
       <div id="buffRow"></div>
     </div>
   </div>
@@ -38,16 +39,69 @@
 
   <div id="hudBottom" class="hud">
     <div id="interactPrompt">&nbsp;</div>
-    <div id="controlsHint">WASD 이동 · SHIFT 대시 · F/클릭 가방 · E 상호작용 · SPACE 빈자리 착석</div>
+    <div id="controlsHint">마우스 이동 · 좌석 클릭 · SPACE 경쟁 · SHIFT 대시 · F 가방 · E 손잡이 · P 핸드폰</div>
   </div>
 
   <div id="centerMsg" class="hud"><span></span></div>
   <div id="screenFx" aria-hidden="true"></div>
   <button id="soundToggle" type="button" aria-label="소리 끄기" title="소리 켜기/끄기">🔊</button>
+  <button id="phoneQuickBtn" type="button" aria-label="핸드폰 열기" title="스트레스 40 이상일 때 사용 가능" disabled>📱 <span>P</span></button>
 
+  <!-- 핸드폰을 열어도 가장자리로 열차 상황이 보이며, 배경 게임은 느리게 계속 진행된다. -->
+  <div id="phoneOverlay" class="hidden" aria-hidden="true">
+    <div id="phoneShell">
+      <div class="phoneTop"><span>19:24</span><span id="phoneSlowTag">열차 시간 ×0.35</span><span>▮▮▮</span></div>
+      <div class="phoneHeader">
+        <button id="phoneHomeBtn" type="button" aria-label="게임 목록">‹</button>
+        <strong id="phoneTitle">퇴근 탈출구</strong>
+        <button id="phoneCloseBtn" type="button" aria-label="핸드폰 닫기">✕</button>
+      </div>
+      <div id="phoneNotice">핸드폰을 보는 동안에도 열차와 위험은 느리게 계속 움직입니다.</div>
+      <main id="phoneScreen">
+        <section id="phoneResult" class="hidden" role="status" aria-live="polite">
+          <div class="resultIcon">🎉</div>
+          <h2 id="phoneResultTitle">스테이지 클리어!</h2>
+          <p id="phoneResultText">스트레스가 20 감소했습니다.</p>
+          <button id="phoneResultConfirm" type="button">확인</button>
+        </section>
+        <section id="phoneHome" class="phonePage active">
+          <p class="phoneIntro">잠깐만 현실 도피하기</p>
+          <button class="gameApp" data-game="dodge"><span>💬</span><b>상사 문자 피하기</b><small>좌우로 움직여 메시지를 피하세요</small></button>
+          <button class="gameApp" data-game="puzzle"><span>🔢</span><b>3×3 미니 스도쿠</b><small>숫자를 드래그해 각 행·열에 1·2·3을 채우세요</small></button>
+          <button class="gameApp" data-game="soul"><span>❤️</span><b>퇴근 의지</b><small>하트를 움직여 업무를 피하세요</small></button>
+        </section>
+        <section id="gameDodge" class="phonePage miniGamePage">
+          <div class="miniStats"><span>남은 시간 <b id="dodgeTime">10.0</b>s</span><span>회복 <b id="dodgeHeal">0</b>/20</span></div>
+          <div id="dodgeField" class="gameField"><div id="dodgePlayer">😵</div></div>
+          <div class="miniHelp">초록 연락은 스트레스 -2 · 빨간 업무는 +2</div>
+        </section>
+        <section id="gamePuzzle" class="phonePage miniGamePage">
+          <div class="miniStats"><span>채운 칸 <b id="puzzleScore">3</b>/9</span><span id="puzzleState">숫자를 채워보세요</span></div>
+          <div id="puzzleBoard" aria-label="3×3 미니 스도쿠"></div>
+          <div id="puzzleNumberTray" aria-label="드래그할 숫자">
+            <div class="numberTile" draggable="true" data-number="1">1</div>
+            <div class="numberTile" draggable="true" data-number="2">2</div>
+            <div class="numberTile" draggable="true" data-number="3">3</div>
+          </div>
+          <div class="miniHelp">아래 숫자를 끌어서 빈칸에 놓으세요 · 다른 숫자로 다시 놓아 수정할 수 있습니다</div>
+          <button id="puzzleReset" class="miniAction" type="button">새 스도쿠</button>
+        </section>
+        <section id="gameSoul" class="phonePage miniGamePage">
+          <div class="miniStats"><span>남은 시간 <b id="soulTime">8.0</b>s</span><span>HP <b id="soulHp">3</b></span></div>
+          <div id="soulField" class="gameField"><div id="soulPlayer">♥</div></div>
+          <div class="miniHelp">방향키 / WASD로 하트를 이동</div>
+        </section>
+      </main>
+      <div class="phoneBottom">●</div>
+    </div>
+  </div>
+
+  <!-- 자리 경쟁이 실제로 진행 중일 때만 표시되는 게이지 -->
   <div id="seatGaugeWrap" class="hud">
-    <div id="seatGaugeLabel">빈자리 착석: SPACE</div>
+    <div id="seatGaugeLabel">경쟁자가 같은 자리를 노립니다! SPACE 연타</div>
     <div id="seatGauge"><div id="seatGaugeFill"></div></div>
+    <div id="seatGaugeRivalTrack"><div id="seatGaugeRival"></div></div>
+    <div id="seatGaugeLegend">위: 나 &nbsp;|&nbsp; 아래: 경쟁 승객</div>
   </div>
 
   <!-- ============ 시작 화면 ============ -->
@@ -57,12 +111,11 @@
       <p>퇴근길 지옥철. 역별 이벤트를 버텨 목적지에서 직접 하차하라.</p>
       <p>통근 스트레스를 관리하고, 명예를 잃지 말 것.</p>
       <div class="ctrlList">
-        <div><b>WASD</b> 이동</div>
-        <div><b>SHIFT</b> 대시</div>
-        <div><b>SPACE</b> 빈자리 착석</div>
-        <div><b>E</b> 손잡이 / 좌석 / 출구</div>
-        <div><b>F / 좌클릭</b> 가방 휘두르기</div>
-        <div><b>1 / 2</b> 이벤트 선택</div>
+        <div>1. 마우스를 누른 채 포인터 방향으로 이동하세요.</div>
+        <div>2. 표시된 빈 좌석을 클릭하세요.</div>
+        <div>3. 경쟁자가 없다면 바로 착석합니다.</div>
+        <div>4. 같은 좌석을 노리는 승객이 있을 때만 SPACE를 연타하세요.</div>
+        <div class="ctrlSub"><b>SHIFT</b> 대시 · <b>F</b> 가방 · <b>E</b> 손잡이 · <b>P</b> 핸드폰(스트레스 40+) · <b>1 / 2</b> 이벤트</div>
       </div>
       <button id="startBtn" class="btn">Game Start</button>
     </div>
@@ -96,20 +149,23 @@
   <!-- GLTF 캐릭터 파이프라인: r128과 동일 버전의 classic(전역) 로더 빌드 -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
-  <script type="module" src="js/modules/runtime.js?v=stage-systems-6"></script>
+  <script type="module" src="js/modules/runtime.js?v=demo-graphics-1"></script>
 
   <!-- 게임 스크립트: 의존 관계상 아래 순서로 로드 -->
-  <script src="js/constants.js?v=stage-systems-4"></script>
-  <script src="js/state.js?v=stage-systems-5"></script>
-  <script src="js/audio.js?v=stage-systems-4"></script>
-  <script src="js/effects.js"></script>
-  <script src="js/scene.js?v=stage-systems-30"></script>
-  <script src="js/hazards.js?v=stage-systems-6"></script>
-  <script src="js/entities.js?v=stage-systems-11"></script>
-  <script src="js/player.js?v=stage-systems-9"></script>
-  <script src="js/ai.js?v=stage-systems-9"></script>
-  <script src="js/systems.js?v=stage-systems-5"></script>
-  <script src="js/ui.js?v=stage-systems-5"></script>
-  <script src="js/main.js?v=stage-systems-13"></script>
+  <!-- modules-fallback: file:// 등 ES 모듈이 차단되는 환경에서도 이벤트 디렉터가 동작하도록 보장 -->
+  <script src="js/modules-fallback.js?v=demo-graphics-1"></script>
+  <script src="js/constants.js?v=demo-graphics-1"></script>
+  <script src="js/state.js?v=demo-graphics-1"></script>
+  <script src="js/audio.js?v=demo-graphics-1"></script>
+  <script src="js/effects.js?v=demo-graphics-1"></script>
+  <script src="js/scene.js?v=demo-graphics-1"></script>
+  <script src="js/hazards.js?v=demo-graphics-1"></script>
+  <script src="js/entities.js?v=demo-graphics-1"></script>
+  <script src="js/player.js?v=demo-graphics-1"></script>
+  <script src="js/ai.js?v=demo-graphics-1"></script>
+  <script src="js/systems.js?v=demo-graphics-1"></script>
+  <script src="js/ui.js?v=demo-graphics-1"></script>
+  <script src="js/minigames.js?v=phone-games-7"></script>
+  <script src="js/main.js?v=demo-graphics-1"></script>
 </body>
 </html>

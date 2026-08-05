@@ -12,6 +12,7 @@
     honorWarn: document.getElementById('honorWarn'),
     postureTag: document.getElementById('postureTag'),
     buffRow: document.getElementById('buffRow'),
+    seatStatus: document.getElementById('seatStatus'),
     timeText: document.getElementById('timeText'),
     stationText: document.getElementById('stationText'),
     progressFill: document.getElementById('progressFill'),
@@ -20,6 +21,7 @@
     centerMsg: document.getElementById('centerMsg'),
     seatWrap: document.getElementById('seatGaugeWrap'),
     seatFill: document.getElementById('seatGaugeFill'),
+    seatRivalFill: document.getElementById('seatGaugeRival'),
     seatLabel: document.getElementById('seatGaugeLabel')
   };
   const STATION_NAMES = ['출발','1번째 역','2번째 역','3번째 역','목적지'];
@@ -50,6 +52,15 @@
     if (G.villainRewardBuff>0) buffs.push('의인('+G.villainRewardBuff.toFixed(0)+'s)');
     if (G.encircled) buffs.push('포위 상태');
     UI.buffRow.textContent = buffs.length? '버프: '+buffs.join(' · ') : '';
+
+    // 좌석 선택 상태 안내 (빈자리 / 선택 / 경쟁)
+    if (UI.seatStatus){
+      const emptyCount = seats.filter(s=>!s.occupied).length;
+      if (G.seatCompetitionActive) UI.seatStatus.textContent = '🔴 자리 경쟁 중! SPACE 연타';
+      else if (G.targetSeat) UI.seatStatus.textContent = '🔵 선택한 좌석으로 이동 중';
+      else if (G.posture===Posture.SEATED) UI.seatStatus.textContent = '🟢 착석 완료';
+      else UI.seatStatus.textContent = '빈자리 '+emptyCount+'석 · 클릭해서 착석';
+    }
 
     UI.bagCd.textContent = G.bagCooldown>0 ? ('가방: '+G.bagCooldown.toFixed(1)+'s') : '가방: 준비됨';
   }
@@ -90,4 +101,3 @@
   }
 
   function setInteract(text){ UI.interact.innerHTML = text || '&nbsp;'; }
-
