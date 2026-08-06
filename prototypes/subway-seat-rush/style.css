@@ -159,3 +159,156 @@
   body.phone-open #centerMsg { left:3vw; width:30vw; transform:none; text-align:center; z-index:85; }
   body.phone-open #centerMsg span { max-width:100%; white-space:normal; }
   @media(max-width:760px) { #phoneOverlay { justify-content:center; align-items:flex-end; padding:2vh 4vw; } #phoneShell { width:92vw; height:76vh; border-width:7px; border-radius:30px; } #phoneScreen { padding:10px; } .gameApp { padding:12px; margin-bottom:9px; } body.phone-open #centerMsg { top:4%; left:5vw; width:90vw; z-index:85; } }
+
+/* ===== Commute survival interface ===== */
+:root {
+  --line-one:#0052a4;
+  --commute-orange:#f59e0b;
+  --stress-red:#d7193f;
+  --rail-ink:#111b28;
+  --ticket-paper:#ebe8df;
+  --metal-blue:#26384d;
+}
+
+#hudLeft { top:22px; left:22px; width:330px; }
+#hudRight { top:22px; right:22px; width:min(570px,44vw); }
+#hudLeft .hudBlock, #hudRight .hudBlock { margin:0; }
+
+.transitCard {
+  position:relative;
+  overflow:visible;
+  padding:19px 20px 15px 26px;
+  color:var(--rail-ink);
+  border:3px solid #26384d;
+  border-radius:21px;
+  background:
+    linear-gradient(115deg,rgba(255,255,255,.48),transparent 36%),
+    repeating-linear-gradient(0deg,rgba(16,35,50,.025) 0 1px,transparent 1px 4px),
+    linear-gradient(145deg,rgba(246,243,234,.97),rgba(211,214,213,.95));
+  box-shadow:0 13px 26px rgba(10,18,27,.22), inset 0 1px rgba(255,255,255,.9);
+  text-shadow:none;
+}
+.transitCard::before {
+  content:"";
+  position:absolute;
+  left:-10px;
+  top:31px;
+  width:15px;
+  height:72px;
+  border-radius:8px 0 0 8px;
+  background:linear-gradient(#0052a4,#123c67);
+  box-shadow:inset 2px 0 rgba(255,255,255,.25);
+}
+.cardScrew { position:absolute; width:7px; height:7px; border-radius:50%; background:#7c8791; box-shadow:inset 0 1px 2px #25303a; }
+.cardScrew.one { top:9px; left:12px; }
+.cardScrew.two { right:12px; bottom:9px; }
+.vitalLabel { display:flex; align-items:center; gap:8px; margin-bottom:5px; font-size:13px; font-weight:900; letter-spacing:-.02em; }
+.vitalLabel strong { margin-left:auto; font-size:25px; line-height:1; font-variant-numeric:tabular-nums; }
+.hudIcon { display:grid; place-items:center; width:26px; height:26px; border-radius:8px; color:#fff; font-size:14px; box-shadow:inset 0 -2px rgba(0,0,0,.18); }
+.hudIcon.stressIcon { background:var(--stress-red); }
+.hudIcon.honorIcon { background:var(--line-one); }
+.transitCard .bar { height:16px; margin:0 0 4px; border:2px solid rgba(24,38,52,.28); border-radius:4px; background:repeating-linear-gradient(90deg,#b9bdbe 0 31px,#d4d5d2 31px 34px); box-shadow:inset 0 2px 3px rgba(0,0,0,.2); overflow:hidden; }
+.transitCard #healthFill { background:linear-gradient(90deg,#f6c344,#ef6b2e 58%,#d7193f); }
+.transitCard #honorFill { background:linear-gradient(90deg,#0b75c8,#50b4e8); }
+.transitCard .warn { min-height:17px; margin-bottom:4px; color:#c51e39; font-size:11px; font-weight:900; }
+#honorWarn { color:#185d92; }
+.statusRail { display:grid; grid-template-columns:auto 1fr; gap:4px 10px; margin:8px -10px -5px; padding:10px 12px; color:#eaf4ff; border-radius:9px; background:linear-gradient(100deg,#172431,#263b4d); box-shadow:inset 0 1px rgba(255,255,255,.12); }
+#postureTag { grid-row:1/3; align-self:center; padding:7px 11px; color:#101a24; border-radius:5px; background:#f0ae25; font-size:12px; font-weight:1000; }
+#seatStatus { font-size:12px; font-weight:900; }
+#buffRow { min-height:14px; color:#82c7ff; font-size:10px; font-weight:800; }
+
+.routeBoard {
+  position:relative;
+  overflow:hidden;
+  padding:16px 20px 13px;
+  color:#eef6ff;
+  border:3px solid #536579;
+  border-radius:13px;
+  background:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.025) 0 1px,transparent 1px 4px),
+    linear-gradient(145deg,#162331,#263a4e 58%,#182736);
+  box-shadow:0 13px 27px rgba(8,14,22,.27), inset 0 0 0 1px rgba(255,255,255,.13);
+  text-shadow:none;
+}
+.routeBoard::after { content:""; position:absolute; inset:7px; pointer-events:none; border:1px solid rgba(139,174,205,.25); border-radius:7px; }
+.routeTop { position:relative; z-index:1; display:flex; align-items:center; gap:13px; }
+.lineBadge { display:grid; place-items:center; flex:0 0 43px; height:43px; border-radius:50%; color:#fff; background:var(--line-one); border:4px solid #edf5fa; font-size:22px; font-weight:1000; box-shadow:0 0 0 2px var(--line-one); }
+#stationText { font-size:25px; font-weight:1000; letter-spacing:-.04em; }
+.routeMap { position:relative; z-index:1; margin:11px 1px 8px; }
+.routeBoard #progressTrack { height:5px; margin:0 13px; border-radius:0; background:#8195aa; box-shadow:none; overflow:visible; }
+.routeBoard #progressFill { height:100%; border-radius:0; background:linear-gradient(90deg,#f2a20d,#ffcb38); box-shadow:0 0 9px rgba(245,158,11,.48); }
+.stationNodes { position:absolute; left:8px; right:8px; top:-5px; display:flex; justify-content:space-between; pointer-events:none; }
+.stationNodes i { width:14px; height:14px; border:3px solid #dce7ef; border-radius:50%; background:#37526d; box-shadow:0 0 0 2px #273a4d; }
+.stationNodes i.passed { background:#3ca2df; }
+.stationNodes i.active { border-color:#fff3bc; background:var(--commute-orange); box-shadow:0 0 0 3px rgba(245,158,11,.28),0 0 10px #f59e0b; }
+.stationDots { display:flex; justify-content:space-between; margin-top:9px; color:#c5d2de; font-size:9px; font-weight:800; }
+.stationDots span:first-child { text-align:left; }
+.stationDots span:last-child { text-align:right; }
+.routeBottom { position:relative; z-index:1; display:flex; align-items:end; justify-content:space-between; padding-top:2px; }
+#timeText { color:#fff; font-size:38px; line-height:1; font-weight:1000; font-variant-numeric:tabular-nums; }
+#timeText::after { content:" 초"; color:#f6b51b; font-size:12px; }
+#bagCd { padding:7px 10px; color:#d9e8f4; border:1px solid #607b94; border-radius:5px; background:rgba(7,16,25,.42); font-size:11px; font-weight:800; }
+
+#hudBottom { bottom:17px; width:auto; max-width:calc(100vw - 32px); }
+#controlsHint { padding:8px 13px; color:#e9f4ff; border:1px solid rgba(147,181,210,.6); border-radius:9px; background:rgba(15,27,39,.9); box-shadow:0 6px 20px rgba(0,0,0,.25); font-size:11px; font-weight:750; letter-spacing:.01em; backdrop-filter:blur(7px); }
+#controlsHint b { display:inline-grid; place-items:center; min-width:22px; height:19px; margin:0 3px; padding:0 5px; color:#162334; border-radius:4px; background:#e9edf0; box-shadow:0 2px 0 #8996a1; font-size:10px; }
+
+#startScreen { background:radial-gradient(circle at 50% 45%,rgba(10,43,69,.38),rgba(4,11,18,.86)); backdrop-filter:blur(5px); }
+#startScreen .startTicket { width:min(650px,calc(100vw - 38px)); max-width:none; padding:29px 32px 26px; color:#172433; border:4px solid #263b50; border-radius:15px; background:linear-gradient(130deg,rgba(255,255,255,.98),rgba(225,226,220,.98)); box-shadow:0 22px 65px rgba(0,0,0,.48),inset 0 0 0 1px #fff; text-align:left; }
+.startEyebrow { color:var(--line-one); font-size:11px; font-weight:1000; letter-spacing:.16em; }
+.startTicket h1 { display:flex; align-items:center; gap:12px; margin:8px 0 3px; font-size:38px; line-height:1.1; letter-spacing:-.055em; }
+.titleTrain { display:grid; place-items:center; width:47px; height:47px; color:#fff; border-radius:14px; background:linear-gradient(#096ab4,#003f7b); font-size:24px; box-shadow:inset 0 -4px rgba(0,0,0,.18); }
+.startLead { margin:0 0 18px 59px; color:#5a6670; font-size:14px; font-weight:750; }
+.ruleCards { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin:0 0 16px; }
+.ruleCards div { position:relative; min-height:82px; padding:13px 11px 11px 44px; border:1px solid #bec6ca; border-radius:9px; background:rgba(255,255,255,.58); box-shadow:inset 0 -3px rgba(32,48,61,.05); }
+.ruleCards i { position:absolute; left:10px; top:12px; display:grid; place-items:center; width:25px; height:25px; color:#fff; border-radius:50%; background:var(--line-one); font-size:12px; font-style:normal; font-weight:1000; }
+.ruleCards b { display:block; margin-bottom:4px; font-size:13px; }
+.ruleCards span { display:block; color:#61707b; font-size:10px; line-height:1.45; }
+.startTicket .ctrlList { max-width:none; margin:0; padding:12px 13px; color:#e7f1fa; border-radius:8px; background:#1c2b39; font-size:12px; line-height:1.8; }
+.startTicket .ctrlSub { margin:8px 2px 15px; color:#68737b; font-size:10px; font-weight:800; }
+.startTicket #startBtn { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; margin:0; padding:13px 20px; color:#fff; border:0; border-radius:8px; background:linear-gradient(#ffad18,#ee8700); box-shadow:0 5px 0 #b96400,0 8px 18px rgba(198,103,0,.24); font-size:19px; font-weight:1000; cursor:pointer; }
+.startTicket #startBtn span { padding-left:12px; border-left:1px solid rgba(255,255,255,.45); font-size:11px; letter-spacing:.04em; }
+.startTicket #startBtn:hover { filter:brightness(1.06); transform:translateY(-1px); }
+.startTicket #startBtn:active { transform:translateY(4px); box-shadow:0 1px 0 #b96400; }
+
+@media (max-width:900px) {
+  #hudLeft { top:12px; left:12px; width:285px; }
+  #hudRight { top:12px; right:12px; width:390px; }
+  .transitCard { padding:13px 14px 10px 20px; }
+  .vitalLabel strong { font-size:20px; }
+  .statusRail { padding:7px 9px; }
+  .routeBoard { padding:11px 14px 10px; }
+  .lineBadge { flex-basis:34px; height:34px; font-size:17px; border-width:3px; }
+  #stationText { font-size:20px; }
+  #timeText { font-size:29px; }
+  .stationDots { font-size:8px; }
+}
+@media (max-width:680px) {
+  #hudLeft { width:230px; }
+  #hudRight { width:225px; }
+  .transitCard { padding:10px 10px 8px 16px; }
+  .hudIcon { width:21px; height:21px; }
+  .vitalLabel { font-size:10px; }
+  .vitalLabel strong { font-size:17px; }
+  .transitCard .bar { height:11px; }
+  .transitCard .warn, #buffRow { display:none; }
+  .statusRail { grid-template-columns:auto 1fr; margin-top:4px; }
+  .routeBoard { padding:9px 10px; }
+  .routeTop { gap:8px; }
+  .lineBadge { flex-basis:28px; height:28px; font-size:14px; }
+  #stationText { font-size:16px; }
+  .stationDots { display:none; }
+  .routeMap { margin:10px 0; }
+  #timeText { font-size:23px; }
+  #bagCd { padding:4px 6px; font-size:8px; }
+  #controlsHint { font-size:0; }
+  #controlsHint b { font-size:9px; }
+  #startScreen .startTicket { padding:22px 19px 20px; }
+  .startTicket h1 { font-size:29px; }
+  .startLead { margin-left:0; }
+  .ruleCards { grid-template-columns:1fr; }
+  .ruleCards div { min-height:0; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .startTicket #startBtn { transition:none; }
+}

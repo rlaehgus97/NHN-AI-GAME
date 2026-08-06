@@ -1,4 +1,44 @@
 "use strict";
+/* Commute-survival UI shell: rebuild presentation while preserving gameplay-facing IDs. */
+  (function buildCommuteUI(){
+    const left=document.getElementById('hudLeft');
+    const right=document.getElementById('hudRight');
+    const controls=document.getElementById('controlsHint');
+    const startPanel=document.querySelector('#startScreen .panel');
+    if(left) left.innerHTML=`
+      <div class="hudBlock transitCard">
+        <div class="cardScrew"></div>
+        <div class="barLabel vitalLabel"><span><i class="hudIcon stressIcon">!</i> 통근 스트레스</span><strong id="healthNum">0</strong></div>
+        <div class="bar stressBar"><span id="healthFill"></span></div>
+        <div id="healthWarn"></div>
+        <div class="barLabel vitalLabel honorLabel"><span><i class="hudIcon honorIcon">★</i> 명예</span><strong id="honorNum">50</strong></div>
+        <div class="bar honorBar"><span id="honorFill"></span></div>
+        <div id="honorGrade">평범한 시민</div><div id="honorWarn"></div>
+        <div class="statusRail"><div id="postureTag">서 있음</div><div id="seatStatus">빈자리 · 클릭해서 착석</div></div>
+        <div id="buffRow"></div>
+      </div>`;
+    if(right) right.innerHTML=`
+      <div class="hudBlock routeBoard">
+        <div class="routeTop"><span class="lineBadge">1</span><div id="stationText">서울역</div></div>
+        <div class="routeMap"><div id="progressTrack"><div id="progressFill"></div></div>
+          <div class="stationNodes"><i data-station="0"></i><i data-station="1"></i><i data-station="2"></i><i data-station="3"></i><i data-station="4"></i></div>
+          <div class="stationDots"><span>서울역</span><span>시청</span><span>종각</span><span>종로3가</span><span>종로5가</span></div>
+        </div>
+        <div class="routeBottom"><div><strong id="timeText">45.0</strong><span>출발</span></div><div id="bagCd">▣ 가방: 준비됨</div></div>
+      </div>`;
+    if(controls) controls.innerHTML='<b>SHIFT</b> 대시 <em>·</em> <b>F</b> 가방 <em>·</em> <b>E</b> 손잡이 <em>·</em> <b>P</b> 핸드폰 <span>(스트레스 40+)</span>';
+    if(startPanel) startPanel.innerHTML=`
+      <div class="startEyebrow">SEOUL LINE 1 · AFTER WORK SURVIVAL</div>
+      <h1><span class="titleTrain">▣</span> 지옥철 생존기</h1>
+      <p class="startLead">퇴근길 혼잡을 버티고 목적지에서 무사히 하차하라.</p>
+      <div class="ruleCards">
+        <div><i>01</i><b>스트레스 관리</b><span>서 있거나 위험에 노출되면 빠르게 상승</span></div>
+        <div><i>02</i><b>빈자리 경쟁</b><span>좌석을 선점하고 필요하면 SPACE 연타</span></div>
+        <div><i>03</i><b>명예 선택</b><span>퇴근도 중요하지만 시민의 품격도 지킬 것</span></div>
+      </div>
+      <div class="ctrlList"><div class="ctrlSub"><b>마우스</b> 이동·좌석 선택　<b>SHIFT</b> 대시　<b>F</b> 가방　<b>E</b> 손잡이　<b>P</b> 핸드폰</div></div>
+      <button id="startBtn" class="btn"><span>교통카드 태그</span> 퇴근 시작</button>`;
+  })();
 /* ui.js — HUD 업데이트 및 화면 메시지 표시 */
 
   /* ============ UI manager ============ */
@@ -42,10 +82,16 @@
 
     UI.timeText.textContent = Math.max(0,G.timeLeft).toFixed(1);
     UI.progressFill.style.width = (G.stageElapsed/BALANCE.stageDuration*100)+'%';
-    UI.stationText.textContent = STATION_NAMES[Math.min(G.stationIndex,4)];
+    const routeNames=['서울역','시청','종각','종로3가','종로5가'];
+    const stationIndex=Math.min(G.stationIndex,4);
+    UI.stationText.textContent = routeNames[stationIndex];
+    document.querySelectorAll('.stationNodes i').forEach((node,index)=>{
+      node.classList.toggle('passed',index<stationIndex);
+      node.classList.toggle('active',index===stationIndex);
+    });
 
     const pt = G.posture===Posture.SEATED?'앉음': G.posture===Posture.HOLDING_HANDLE?'손잡이':'서 있음';
-    UI.postureTag.textContent = '자세: '+pt;
+    UI.postureTag.textContent = pt;
 
     let buffs=[];
     if (G.kindness.active) buffs.push('선행('+G.kindness.remaining.toFixed(0)+'s)');
